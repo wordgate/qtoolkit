@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 import (
 	"fmt"

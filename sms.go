@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 // SendNotifySms 发送通知短信
 func SmsSend(mobile, content string) error {

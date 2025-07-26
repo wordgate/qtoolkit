@@ -1,18 +1,18 @@
-module github.com/allnationconnect/mods
+module github.com/wordgate/qtoolkit
 
 go 1.23.4
 
-replace github.com/allnationconnect/mods/log => ./log
+replace github.com/wordgate/qtoolkit/log => ./log
 
-replace github.com/allnationconnect/mods/appstore => ./appstore
+replace github.com/wordgate/qtoolkit/appstore => ./appstore
 
-replace github.com/allnationconnect/mods/wordgate => ./wordgate
+replace github.com/wordgate/qtoolkit/wordgate => ./wordgate
 
-replace github.com/allnationconnect/mods/wordgate/sdk => ./wordgate/sdk
+replace github.com/wordgate/qtoolkit/wordgate/sdk => ./wordgate/sdk
 
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.63.103
-	github.com/allnationconnect/mods/log v0.0.0-00010101000000-000000000000
+	github.com/wordgate/qtoolkit/log v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/gin-gonic/gin v1.10.0
 	github.com/gorilla/websocket v1.5.3

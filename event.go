@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 // @see https://github.com/jonhoo/go-events/blob/master/events.go
 
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allnationconnect/mods/log"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // Event represents a single occurance of some event in the underlying system.

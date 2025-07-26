@@ -1,4 +1,4 @@
-module github.com/allnationconnect/mods/util
+module github.com/wordgate/qtoolkit/util
 
 go 1.23.0
 

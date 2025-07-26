@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 import (
 	"github.com/spf13/viper"

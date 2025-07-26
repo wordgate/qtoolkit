@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/allnationconnect/mods/log"
+	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

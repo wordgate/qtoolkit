@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/allnationconnect/mods/log"
 	"github.com/spf13/viper"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // WordgateConfig Wordgate配置信息

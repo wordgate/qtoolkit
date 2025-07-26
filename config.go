@@ -1,11 +1,11 @@
-package mods
+package qtoolkit
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/allnationconnect/mods/log"
+	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"

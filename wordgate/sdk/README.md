@@ -15,7 +15,7 @@ Wordgate 同步 SDK 是一个用于与Wordgate API进行交互的工具包，主
 
 ### 使用预编译的二进制文件
 
-从[GitHub Releases](https://github.com/allnationconnect/mods/wordgate/sdk/releases)页面下载最新版本的预编译二进制文件。
+从[GitHub Releases](https://github.com/wordgate/qtoolkit/wordgate/sdk/releases)页面下载最新版本的预编译二进制文件。
 
 ### 在Mac上使用Homebrew安装
 
@@ -45,7 +45,7 @@ sudo apt-get install wordgate
 要从源码构建，您需要安装Go 1.20或更高版本:
 
 ```bash
-git clone https://github.com/allnationconnect/mods/wordgate/sdk.git
+git clone https://github.com/wordgate/qtoolkit/wordgate/sdk.git
 cd sdk
 go build -o wordgate ./cmd/wordgate/main.go
 ```
@@ -61,7 +61,7 @@ import (
     "fmt"
     "log"
     "path/filepath"
-    "github.com/allnationconnect/mods/wordgate/sdk"
+    "github.com/wordgate/qtoolkit/wordgate/sdk"
 )
 
 func main() {
@@ -261,13 +261,13 @@ wordgate -print-demo > config.yaml
 
 1. 在您的项目中添加依赖：
 ```bash
-go get github.com/allnationconnect/mods/wordgate/sdk
+go get github.com/wordgate/qtoolkit/wordgate/sdk
 ```
 
 2. 在您的 `go.mod` 文件中添加：
 ```go
-require github.com/allnationconnect/mods/wordgate/sdk v0.0.0
-replace github.com/allnationconnect/mods/wordgate/sdk => github.com/allnationconnect/mods/wordgate/sdk v0.0.0
+require github.com/wordgate/qtoolkit/wordgate/sdk v0.0.0
+replace github.com/wordgate/qtoolkit/wordgate/sdk => github.com/wordgate/qtoolkit/wordgate/sdk v0.0.0
 ```
 
 3. 确保您的项目有权限访问私有仓库：
@@ -285,7 +285,7 @@ git submodule update --init --recursive
 
 2. 在您的代码中引用SDK：
 ```go
-import "github.com/allnationconnect/mods/wordgate/sdk"
+import "github.com/wordgate/qtoolkit/wordgate/sdk"
 ```
 
 ### 方法3：使用私有 Go Proxy
@@ -297,7 +297,7 @@ export GOPROXY=your-private-proxy-url
 
 2. 正常使用 go get 命令：
 ```bash
-go get github.com/allnationconnect/mods/wordgate/sdk
+go get github.com/wordgate/qtoolkit/wordgate/sdk
 ```
 
 // ... existing code ... 

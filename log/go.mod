@@ -1,4 +1,4 @@
-module github.com/allnationconnect/mods/log
+module github.com/wordgate/qtoolkit/log
 
 go 1.23.0
 

@@ -1,13 +1,13 @@
-module github.com/allnationconnect/mods/appstore
+module github.com/wordgate/qtoolkit/appstore
 
 go 1.23.0
 
 toolchain go1.23.4
 
-replace github.com/allnationconnect/mods/log => ../log
+replace github.com/wordgate/qtoolkit/log => ../log
 
 require (
-	github.com/allnationconnect/mods/log v0.0.0-00010101000000-000000000000
+	github.com/wordgate/qtoolkit/log v0.0.0-00010101000000-000000000000
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/rs/xid v1.6.0
 	github.com/spf13/viper v1.19.0

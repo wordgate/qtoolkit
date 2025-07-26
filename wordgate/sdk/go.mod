@@ -1,4 +1,4 @@
-module github.com/allnationconnect/mods/wordgate/sdk
+module github.com/wordgate/qtoolkit/wordgate/sdk
 
 go 1.20
 

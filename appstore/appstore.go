@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allnationconnect/mods/log"
+	"github.com/wordgate/qtoolkit/log"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/xid"
 	"github.com/spf13/viper"

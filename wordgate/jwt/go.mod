@@ -1,4 +1,4 @@
-module github.com/allnationconnect/mods/wordgate/jwt
+module github.com/wordgate/qtoolkit/wordgate/jwt
 
 go 1.23.4
 

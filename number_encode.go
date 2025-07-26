@@ -1,4 +1,4 @@
-package mods
+package qtoolkit
 
 /*
 邀请码容量对照表（约等于最大可编码ID+1）
