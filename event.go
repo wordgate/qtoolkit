@@ -183,6 +183,11 @@ var EventDefaultRetryDelay = time.Duration(1) * time.Second
 
 func EventHandle(prefix string, handler func(data interface{}) error) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorf(context.Background(), "event:handler prefix:%s, panic: %v", prefix, r)
+			}
+		}()
 		for event := range globalEvents.Listen(prefix) {
 			err := handler(event.Data)
 			if err != nil {
