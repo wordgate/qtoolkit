@@ -1,0 +1,11 @@
+
+aliyun:
+  log:
+    url: YOUR_PROJECT.YOUR_REGION.log.aliyuncs.com
+    logstore: YOUR_LOGSTORE_NAME
+    access_key: YOUR_ALIYUN_LOG_ACCESS_KEY
+    access_secret: YOUR_ALIYUN_LOG_ACCESS_SECRET
+    interval_ms: 3000
+  access_key: YOUR_ALIYUN_ACCESS_KEY
+  access_secret: YOUR_ALIYUN_ACCESS_SECRET
+  region_id: YOUR_REGION_ID

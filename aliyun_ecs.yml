@@ -1,0 +1,9 @@
+
+
+
+aliyun:
+  ecs:
+    default:
+      region: cn-hangzhou
+      access_key: YOUR_ALIYUN_ECS_ACCESS_KEY
+      secret: YOUR_ALIYUN_ECS_SECRET

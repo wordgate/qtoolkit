@@ -1,0 +1,5 @@
+
+jwt:
+  secret: "your-secret-key-here"  # JWT密钥，请在生产环境中使用强密钥
+  expires_in: 3600                # 访问令牌过期时间（秒），默认1小时
+  refresh_expire: 604800          # 刷新令牌过期时间（秒），默认7天

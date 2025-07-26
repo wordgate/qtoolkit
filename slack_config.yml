@@ -1,0 +1,3 @@
+
+slack:
+  alert: https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK_URL

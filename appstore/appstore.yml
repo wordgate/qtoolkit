@@ -1,0 +1,15 @@
+# 苹果应用内购买(IAP)配置示例
+appstore:
+  iap:
+    # Apple App Store Connect API密钥ID
+    keyId: "YOUR_APP_STORE_API_KEY_ID"
+    
+    # Apple Developer账号发行者ID (通常是Team ID)
+    issuer: "YOUR_ISSUER_ID"
+    
+    # 私钥 (p8格式，从App Store Connect下载)
+    # 实际使用时请将私钥文件路径放在环境变量或安全的配置中
+    key: |
+      -----BEGIN PRIVATE KEY-----
+      YOUR_PRIVATE_KEY_CONTENT_HERE
+      -----END PRIVATE KEY-----

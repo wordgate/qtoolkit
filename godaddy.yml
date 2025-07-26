@@ -1,0 +1,5 @@
+
+godaddy:
+  base_url: https://api.ote-godaddy.com
+  key: YOUR_GODADDY_API_KEY
+  secret: YOUR_GODADDY_API_SECRET

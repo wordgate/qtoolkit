@@ -1,0 +1,6 @@
+mail:
+  send_from: YOUR_EMAIL@example.com
+  username: YOUR_EMAIL@example.com
+  password: YOUR_EMAIL_PASSWORD
+  smtp_host: YOUR_SMTP_HOST
+  smtp_port: 465
