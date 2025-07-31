@@ -3,8 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-
-This is a Go toolkit library for the WordGate platform, organized as a modular monorepo with various service integrations. The package has been renamed from `wgconnect` to `qtoolkit` (qtoolkit stands for "Quality Toolkit").
+qtoolkit stands for "Quality Toolkit"
+This is a Go toolkit library for the WordGate platform, organized as a modular monorepo with various service integrations. 
 
 ## Development Commands
 

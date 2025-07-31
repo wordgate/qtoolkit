@@ -35,16 +35,17 @@ func NewJWTService(config JWTConfig) *JWTService {
 }
 
 // GenerateToken 生成JWT访问令牌
-func (s *JWTService) GenerateToken(uuid string) (*JWTToken, error) {
+func (s *JWTService) GenerateToken(uuid string, role string) (*JWTToken, error) {
 	now := time.Now()
 	expiresIn := time.Duration(s.config.ExpiresIn) * time.Second
 	expiredAt := now.Add(expiresIn).Unix()
 
 	claims := jwt.MapClaims{
-		"sub": uuid,       // 用户UUID
-		"iat": now.Unix(), // 签发时间
-		"exp": expiredAt,  // 过期时间
-		"typ": "access",   // 令牌类型
+		"sub":  uuid,       // 用户UUID
+		"role": role,       // 用户角色
+		"iat":  now.Unix(), // 签发时间
+		"exp":  expiredAt,  // 过期时间
+		"typ":  "access",   // 令牌类型
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -110,4 +111,38 @@ func (s *JWTService) JwtUserID(c *gin.Context) string {
 		return ""
 	}
 	return claims["sub"].(string)
+}
+
+
+// JwtUserInfo 从请求中获取用户UUID和角色
+func (s *JWTService) JwtUserInfo(c *gin.Context) (uuid string, role string) {
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		return "", ""
+	}
+
+	// 去掉Bearer前缀
+	token = strings.TrimPrefix(token, "Bearer ")
+
+	// 解析令牌
+	jwtToken, err := s.ValidateToken(token)
+	if err != nil || !jwtToken.Valid {
+		return "", ""
+	}
+
+	// 从令牌中获取用户信息
+	claims, ok := jwtToken.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", ""
+	}
+
+	// 检查令牌类型
+	tokenType, ok := claims["typ"].(string)
+	if !ok || tokenType != "access" {
+		return "", ""
+	}
+
+	uuid, _ = claims["sub"].(string)
+	role, _ = claims["role"].(string)
+	return uuid, role
 }
