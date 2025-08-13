@@ -23,6 +23,24 @@ type SqsMessage struct {
 	MaxRetries int         `json:"maxRetries"`
 }
 
+// ParseParams 将消息参数解析到指定的结构体中
+// 使用JSON序列化/反序列化来实现类型安全的参数解析
+func (msg *SqsMessage) ParseParams(target interface{}) error {
+	// 先将Params序列化为JSON
+	jsonData, err := json.Marshal(msg.Params)
+	if err != nil {
+		return fmt.Errorf("marshal params failed: %v", err)
+	}
+	
+	// 再将JSON反序列化到目标结构体
+	err = json.Unmarshal(jsonData, target)
+	if err != nil {
+		return fmt.Errorf("unmarshal to target struct failed: %v", err)
+	}
+	
+	return nil
+}
+
 type SqsClient struct {
 	sqs      *sqs.SQS
 	queueUrl string
