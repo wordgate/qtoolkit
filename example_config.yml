@@ -1,0 +1,24 @@
+qtoolkit:
+  is_dev: true
+  is_test: false
+  
+  modules:
+    aws:
+      enabled: true
+      config_file: "aws/aws_config.yml"
+    aliyun:
+      enabled: false
+      config_file: "aliyun/aliyun_config.yml"
+    database:
+      enabled: true
+    redis:
+      enabled: false
+    slack:
+      enabled: true
+      config_file: "slack/slack_config.yml"
+    email:
+      enabled: true
+      config_file: "email/mail_config.yml"
+    godaddy:
+      enabled: false
+      config_file: "godaddy/godaddy.yml"

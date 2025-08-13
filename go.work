@@ -1,0 +1,13 @@
+go 1.23.4
+
+use (
+	./core
+	./aws
+	./aliyun
+	./database
+	./email
+	./slack
+	./redis
+	./godaddy
+	./integration
+)

@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 qtoolkit stands for "Quality Toolkit"
-This is a Go toolkit library for the WordGate platform, organized as a modular monorepo with various service integrations. 
+This is a Go toolkit library for the WordGate platform, organized as a modular monorepo with various service integrations.
+
+### Design Principles
+
+**Configuration-Driven Architecture**: qtoolkit follows a configuration-driven approach where users can quickly enable and use various services through simple YAML configuration files. The core philosophy is to provide zero-configuration startup with sensible defaults while allowing full customization when needed.
+
+**Dependency Isolation**: Each service integration (AWS, Aliyun, Slack, etc.) is completely isolated with its own go.mod file to minimize compilation size. Users only include dependencies for services they actually use.
+
+**按需加载 (On-Demand Loading)**: Services are only initialized when explicitly configured and requested, reducing memory footprint and startup time.
+
+**统一接口 (Unified Interface)**: Similar service types (e.g., cloud providers, notification services) provide consistent APIs for easy switching and testing. 
 
 ## Development Commands
 
