@@ -254,12 +254,12 @@ qtoolkit-migrate update ./your-project
 require github.com/wordgate/qtoolkit v0.1.1
 ```
 
-**v1.0:**
+**v0.1.4:**
 ```go
 require (
-    github.com/wordgate/qtoolkit/core v1.0.0
-    github.com/wordgate/qtoolkit/aws v1.0.0     // 仅在需要时添加
-    github.com/wordgate/qtoolkit/slack v1.0.0   // 仅在需要时添加
+    github.com/wordgate/qtoolkit/core v0.1.4
+    github.com/wordgate/qtoolkit/aws v0.1.4     // 仅在需要时添加
+    github.com/wordgate/qtoolkit/slack v0.1.4   // 仅在需要时添加
 )
 ```
 
