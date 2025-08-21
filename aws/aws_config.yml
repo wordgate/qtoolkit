@@ -1,0 +1,19 @@
+# AWS Configuration Template
+# Replace placeholder values with your actual credentials
+
+aws:
+  access_key: "YOUR_AWS_ACCESS_KEY"
+  secret_key: "YOUR_AWS_SECRET_KEY" 
+  region: "us-west-2"
+  
+  s3:
+    bucket: "your-s3-bucket-name"
+    region: "us-west-2"
+    url_prefix: "https://your-s3-bucket-name.s3.us-west-2.amazonaws.com"
+
+# Security Note:
+# - Never commit real credentials to version control
+# - Use environment variables for production:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# - Use IAM roles when running on EC2
+# - Rotate credentials regularly
