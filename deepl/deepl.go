@@ -218,6 +218,8 @@ func normalizeLanguageCode(code string) string {
 		return "EN-US"
 	case "en-gb", "british english":
 		return "EN-GB"
+	case "en-au", "australian english":
+		return "EN-GB" // DeepL doesn't support EN-AU, map to EN-GB
 
 	// 日语
 	case "ja", "jp", "japanese":

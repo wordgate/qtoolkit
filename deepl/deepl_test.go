@@ -161,6 +161,9 @@ func TestNormalizeLanguageCode(t *testing.T) {
 		{"EN", "EN-US"},
 		{"en-GB", "EN-GB"},
 		{"En-Gb", "EN-GB"},
+		{"en-AU", "EN-GB"},
+		{"en-au", "EN-GB"},
+		{"australian english", "EN-GB"},
 
 		// 日语
 		{"ja", "JA"},
