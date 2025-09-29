@@ -4,5 +4,6 @@ use (
 	.
 	./aws
 	./deepl
+	./mail
 	./redis
 )
