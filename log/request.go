@@ -96,8 +96,14 @@ func MiddlewareRequestLog(logResponseContent bool) gin.HandlerFunc {
 			res["location"] = c.Writer.Header().Get("Location")
 		}
 
-		// 输出日志
-		logger.WithField("response", res).Info()
+		// 根据状态码选择合适的日志级别
+		if status >= 500 {
+			logger.WithField("response", res).Error()
+		} else if status >= 400 {
+			logger.WithField("response", res).Warn()
+		} else {
+			logger.WithField("response", res).Info()
+		}
 	}
 }
 
