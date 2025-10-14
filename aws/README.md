@@ -135,6 +135,28 @@ await fetch(url, {
 
 ## SES Email Sending
 
+### Ultra-Simple Usage (with Default Sender)
+
+If you configure a default sender in your config, you can use the simplest API:
+
+```go
+// Configure default sender once
+config := &aws.Config{
+    Region: "us-east-1",
+    SES: aws.SESConfig{
+        Region:      "us-east-1",
+        DefaultFrom: "noreply@yourdomain.com",  // Set default sender
+    },
+}
+aws.SetConfig(config)
+
+// Then just use 3 parameters!
+err := aws.SendMail("user@example.com", "Welcome", "Thank you for signing up!")
+
+// Or send HTML email
+err = aws.SendRichMail("user@example.com", "Newsletter", "<h1>Latest News</h1>")
+```
+
 ### Simple Email (Text)
 
 ```go
@@ -234,9 +256,11 @@ resp, err := aws.SendSimpleEmail(...)
 - `SimplePresignedURLHandler()`: Simple HTTP handler
 
 #### SES Email
-- `SendEmail(req)`: Send email with full options
-- `SendSimpleEmail(from, to, subject, body)`: Send simple text email
-- `SendHTMLEmail(from, to, subject, htmlBody)`: Send HTML email
+- `SendMail(to, subject, body)`: Send text email using default sender (3 params)
+- `SendRichMail(to, subject, htmlBody)`: Send HTML email using default sender (3 params)
+- `SendSimpleEmail(from, to, subject, body)`: Send text email with explicit sender
+- `SendHTMLEmail(from, to, subject, htmlBody)`: Send HTML email with explicit sender
+- `SendEmail(req)`: Send email with full options (CC, BCC, Reply-To, etc.)
 
 ### Configuration Management
 - `SetConfig(config)`: Set global configuration

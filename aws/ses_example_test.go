@@ -6,6 +6,51 @@ import (
 	"github.com/wordgate/qtoolkit/aws"
 )
 
+// ExampleSendMail demonstrates the ultra-simple API using default sender
+func ExampleSendMail() {
+	// Configure default sender once
+	config := &aws.Config{
+		Region: "us-east-1",
+		SES: aws.SESConfig{
+			Region:      "us-east-1",
+			DefaultFrom: "noreply@yourdomain.com",
+		},
+	}
+	aws.SetConfig(config)
+
+	// Then just use 3 parameters!
+	err := aws.SendMail("user@example.com", "Welcome", "Thank you for signing up!")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Println("Email sent successfully!")
+}
+
+// ExampleSendRichMail demonstrates sending HTML email using default sender
+func ExampleSendRichMail() {
+	// Configure default sender once
+	config := &aws.Config{
+		Region: "us-east-1",
+		SES: aws.SESConfig{
+			Region:      "us-east-1",
+			DefaultFrom: "noreply@yourdomain.com",
+		},
+	}
+	aws.SetConfig(config)
+
+	// Send HTML email with 3 parameters
+	htmlContent := "<h1>Newsletter</h1><p>Check out our latest updates!</p>"
+	err := aws.SendRichMail("user@example.com", "Monthly Newsletter", htmlContent)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Println("HTML email sent successfully!")
+}
+
 // ExampleSendSimpleEmail demonstrates sending a simple text email
 func ExampleSendSimpleEmail() {
 	// Configure AWS (optional on EC2 with IAM Role)

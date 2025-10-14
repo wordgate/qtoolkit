@@ -85,6 +85,42 @@ func SendHTMLEmail(from, to, subject, htmlBody string) (*EmailResponse, error) {
 	})
 }
 
+// SendMail sends a plain text email using the default sender from config
+// This is a simplified function that uses the configured default_from address
+// Usage: SendMail("recipient@example.com", "Subject", "Body text")
+// Note: Requires SES.DefaultFrom to be configured in SetConfig(), or will return an error
+func SendMail(to, subject, content string) error {
+	from := getDefaultFrom()
+	if from == "" {
+		return fmt.Errorf("default sender (SES.DefaultFrom) not configured, use SendSimpleEmail() instead or configure SetConfig()")
+	}
+
+	_, err := SendSimpleEmail(from, to, subject, content)
+	return err
+}
+
+// SendRichMail sends an HTML email using the default sender from config
+// This is a simplified function that uses the configured default_from address
+// Usage: SendRichMail("recipient@example.com", "Subject", "<h1>HTML Body</h1>")
+// Note: Requires SES.DefaultFrom to be configured in SetConfig(), or will return an error
+func SendRichMail(to, subject, htmlContent string) error {
+	from := getDefaultFrom()
+	if from == "" {
+		return fmt.Errorf("default sender (SES.DefaultFrom) not configured, use SendHTMLEmail() instead or configure SetConfig()")
+	}
+
+	_, err := SendHTMLEmail(from, to, subject, htmlContent)
+	return err
+}
+
+// getDefaultFrom returns the default sender email from config
+func getDefaultFrom() string {
+	if globalConfig != nil && globalConfig.SES.DefaultFrom != "" {
+		return globalConfig.SES.DefaultFrom
+	}
+	return ""
+}
+
 // validateEmailRequest validates the email request
 func validateEmailRequest(req *EmailRequest) error {
 	if req.From == "" {
