@@ -69,40 +69,29 @@ func TestS3GeneratePresignedPOSTURL_NoConfig(t *testing.T) {
 	}
 }
 
-func TestCreateSession_NoConfig(t *testing.T) {
-	// Clear config
-	SetConfig(nil)
-	
-	_, err := createSession("us-west-2")
-	if err == nil || !strings.Contains(err.Error(), "AWS config not set") {
-		t.Error("Expected error when config is not set")
-	}
-}
-
 // Mock tests with config set
 func TestWithMockConfig(t *testing.T) {
 	config := &Config{
 		AccessKey: "AKIA_TEST_KEY",
-		SecretKey: "test-secret-key", 
+		SecretKey: "test-secret-key",
 		Region:    "us-west-2",
 		S3: S3Config{
 			Bucket:    "test-bucket",
-			Region:    "us-west-2", 
+			Region:    "us-west-2",
 			URLPrefix: "https://test-bucket.s3.us-west-2.amazonaws.com",
+		},
+		SES: SESConfig{
+			Region:      "us-east-1",
+			DefaultFrom: "noreply@example.com",
 		},
 	}
 	SetConfig(config)
 
-	t.Run("CreateSession", func(t *testing.T) {
-		session, err := createSession("us-west-2")
-		if err != nil {
-			t.Errorf("Unexpected error creating session: %v", err)
-		}
-		if session == nil {
-			t.Error("Expected non-nil session")
-		}
-	})
+	// Verify config is set correctly
+	if GetConfig().AccessKey != "AKIA_TEST_KEY" {
+		t.Error("Config not set correctly")
+	}
 
-	// Note: Actual S3 operations would require valid AWS credentials and network access
+	// Note: Actual S3/SES operations would require valid AWS credentials and network access
 	// In a real test environment, you might use mocked S3 service or localstack
 }

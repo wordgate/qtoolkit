@@ -1,11 +1,12 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ses"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 )
 
 // EmailRequest represents a simplified email sending request
@@ -38,26 +39,27 @@ func SendEmail(req *EmailRequest) (*EmailResponse, error) {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
 
-	// Create AWS session
-	sess, err := createSESSession()
+	// Create AWS config
+	cfg, err := createSESConfig()
 	if err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
 
-	// Create SES service client
-	svc := ses.New(sess)
+	// Create SES v2 service client
+	client := sesv2.NewFromConfig(cfg)
 
 	// Build email input
-	input := buildSESInput(req)
+	input := buildSESv2Input(req)
 
 	// Send email
-	result, err := svc.SendEmail(input)
+	ctx := context.Background()
+	result, err := client.SendEmail(ctx, input)
 	if err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
 
 	return &EmailResponse{
-		MessageID: aws.StringValue(result.MessageId),
+		MessageID: *result.MessageId,
 		Success:   true,
 		Error:     nil,
 	}, nil
@@ -138,62 +140,60 @@ func validateEmailRequest(req *EmailRequest) error {
 	return nil
 }
 
-// buildSESInput builds the SES SendEmail input from EmailRequest
-func buildSESInput(req *EmailRequest) *ses.SendEmailInput {
-	input := &ses.SendEmailInput{
-		Source: aws.String(req.From),
-		Destination: &ses.Destination{
-			ToAddresses: aws.StringSlice(req.To),
+// buildSESv2Input builds the SES v2 SendEmail input from EmailRequest
+func buildSESv2Input(req *EmailRequest) *sesv2.SendEmailInput {
+	input := &sesv2.SendEmailInput{
+		FromEmailAddress: &req.From,
+		Destination: &types.Destination{
+			ToAddresses: req.To,
 		},
-		Message: &ses.Message{
-			Subject: &ses.Content{
-				Data:    aws.String(req.Subject),
-				Charset: aws.String("UTF-8"),
+		Content: &types.EmailContent{
+			Simple: &types.Message{
+				Subject: &types.Content{
+					Data:    &req.Subject,
+					Charset: strPtr("UTF-8"),
+				},
+				Body: &types.Body{},
 			},
-			Body: &ses.Body{},
 		},
 	}
 
 	// Add CC if provided
 	if len(req.CC) > 0 {
-		input.Destination.CcAddresses = aws.StringSlice(req.CC)
+		input.Destination.CcAddresses = req.CC
 	}
 
 	// Add BCC if provided
 	if len(req.BCC) > 0 {
-		input.Destination.BccAddresses = aws.StringSlice(req.BCC)
+		input.Destination.BccAddresses = req.BCC
 	}
 
 	// Add ReplyTo if provided
 	if len(req.ReplyTo) > 0 {
-		input.ReplyToAddresses = aws.StringSlice(req.ReplyTo)
+		input.ReplyToAddresses = req.ReplyTo
 	}
 
 	// Add text body if provided
 	if req.BodyText != "" {
-		input.Message.Body.Text = &ses.Content{
-			Data:    aws.String(req.BodyText),
-			Charset: aws.String("UTF-8"),
+		input.Content.Simple.Body.Text = &types.Content{
+			Data:    &req.BodyText,
+			Charset: strPtr("UTF-8"),
 		}
 	}
 
 	// Add HTML body if provided
 	if req.BodyHTML != "" {
-		input.Message.Body.Html = &ses.Content{
-			Data:    aws.String(req.BodyHTML),
-			Charset: aws.String("UTF-8"),
+		input.Content.Simple.Body.Html = &types.Content{
+			Data:    &req.BodyHTML,
+			Charset: strPtr("UTF-8"),
 		}
 	}
 
 	return input
 }
 
-// createSESSession creates an AWS session for SES
-// It supports multiple authentication methods in this priority order:
-// 1. Explicit credentials via globalConfig (if set)
-// 2. EC2 IAM Role (automatic when running on EC2)
-// 3. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-func createSESSession() (*session.Session, error) {
+// createSESConfig creates an AWS config for SES v2
+func createSESConfig() (awsv2.Config, error) {
 	// Determine the region to use
 	region := "us-east-1" // Default SES region
 
@@ -204,22 +204,12 @@ func createSESSession() (*session.Session, error) {
 		} else if globalConfig.Region != "" {
 			region = globalConfig.Region
 		}
-
-		// If explicit credentials are configured, use them
-		if globalConfig.AccessKey != "" && globalConfig.SecretKey != "" {
-			return createSession(region)
-		}
 	}
 
-	// Otherwise, let AWS SDK auto-discover credentials
-	// This will work with:
-	// - EC2 IAM Roles (automatic)
-	// - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-	// - AWS credentials file (~/.aws/credentials)
-	return session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String(region),
-		},
-		SharedConfigState: session.SharedConfigEnable,
-	})
+	return loadConfig(region)
+}
+
+// strPtr is a helper function to get a pointer to a string
+func strPtr(s string) *string {
+	return &s
 }

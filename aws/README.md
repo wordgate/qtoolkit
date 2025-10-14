@@ -2,6 +2,8 @@
 
 This module provides AWS services integration for qtoolkit, including S3 and SES operations.
 
+**IMPORTANT**: This module has been migrated to AWS SDK for Go v2. AWS SDK v1 reaches end-of-support on July 31st, 2025.
+
 ## Features
 
 ### S3 - Server-Side Upload
@@ -286,3 +288,37 @@ go test ./...
 ```
 
 Note: Integration tests require valid AWS credentials and network access.
+
+## Migration from AWS SDK v1
+
+This module has been migrated to AWS SDK for Go v2. Key changes:
+
+### Breaking Changes
+
+1. **S3HandleImageUpload signature changed**:
+   - Old: `beforeUpload func(c *gin.Context, file io.ReadSeeker) (io.ReadSeekCloser, error)`
+   - New: `beforeUpload func(c *gin.Context, file io.Reader) (io.ReadCloser, error)`
+   - Reason: SDK v2 uses `io.Reader` instead of `io.ReadSeeker`
+
+2. **Internal implementation**:
+   - Uses AWS SDK v2 configuration and clients
+   - Presigned URLs generated using `s3.NewPresignClient`
+   - SES uses `sesv2` service (SES API v2)
+
+### Benefits of SDK v2
+
+- Modular design - only import what you need
+- Better performance and smaller binary size
+- Continued security updates and support
+- Access to newer AWS services and features
+- Context-aware API calls
+
+### No API Changes
+
+The public API remains the same:
+- `SendMail()`, `SendRichMail()`, `SendEmail()`
+- `S3Upload()`, `S3UploadBytes()`
+- `S3GeneratePresignedURL()`, `S3GeneratePresignedPOSTURL()`
+- `SetConfig()`, `GetConfig()`
+
+Your existing code will continue to work with minimal changes!

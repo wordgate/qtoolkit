@@ -1,11 +1,11 @@
 package aws
 
 import (
-	"fmt"
-	
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"context"
+
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
 // Config represents AWS configuration
@@ -26,8 +26,8 @@ type S3Config struct {
 
 // SESConfig represents SES specific configuration
 type SESConfig struct {
-	Region       string `yaml:"region" json:"region"`              // SES region (optional, uses global region if not set)
-	DefaultFrom  string `yaml:"default_from" json:"default_from"`  // Default sender email (optional)
+	Region      string `yaml:"region" json:"region"`              // SES region (optional, uses global region if not set)
+	DefaultFrom string `yaml:"default_from" json:"default_from"`  // Default sender email (optional)
 }
 
 var globalConfig *Config
@@ -42,17 +42,27 @@ func GetConfig() *Config {
 	return globalConfig
 }
 
-// createSession creates an AWS session with the given region
-func createSession(region string) (*session.Session, error) {
-	if globalConfig == nil {
-		return nil, fmt.Errorf("AWS config not set")
+// loadConfig loads AWS configuration (v2 SDK style)
+// It returns awsv2.Config that can be used with AWS SDK v2 clients
+func loadConfig(region string) (awsv2.Config, error) {
+	ctx := context.Background()
+
+	// If explicit credentials are configured, use them
+	if globalConfig != nil && globalConfig.AccessKey != "" && globalConfig.SecretKey != "" {
+		return config.LoadDefaultConfig(ctx,
+			config.WithRegion(region),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				globalConfig.AccessKey,
+				globalConfig.SecretKey,
+				"",
+			)),
+		)
 	}
 
-	return session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(globalConfig.AccessKey, globalConfig.SecretKey, ""),
-		},
-		SharedConfigState: session.SharedConfigEnable,
-	})
+	// Otherwise, let AWS SDK auto-discover credentials
+	// This will work with:
+	// - EC2 IAM Roles (automatic)
+	// - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+	// - AWS credentials file (~/.aws/credentials)
+	return config.LoadDefaultConfig(ctx, config.WithRegion(region))
 }

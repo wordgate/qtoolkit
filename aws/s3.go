@@ -2,19 +2,20 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 )
 
 // S3Upload uploads a file to S3 and returns the public URL
-func S3Upload(objKey string, body io.ReadSeeker) (string, error) {
+func S3Upload(objKey string, body io.Reader) (string, error) {
 	if globalConfig == nil {
 		return "", fmt.Errorf("AWS config not set")
 	}
@@ -24,15 +25,17 @@ func S3Upload(objKey string, body io.ReadSeeker) (string, error) {
 	urlPrefix := strings.TrimRight(globalConfig.S3.URLPrefix, "/") + "/"
 	objKey = strings.TrimLeft(objKey, "/")
 
-	sess, err := createSession(region)
+	cfg, err := loadConfig(region)
 	if err != nil {
 		return "", err
 	}
 
-	svc := s3.New(sess)
-	_, err = svc.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(objKey),
+	client := s3.NewFromConfig(cfg)
+	ctx := context.Background()
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: awsv2.String(bucket),
+		Key:    awsv2.String(objKey),
 		Body:   body,
 	})
 	if err != nil {
@@ -47,7 +50,7 @@ func S3UploadBytes(objKey string, data []byte) (string, error) {
 	return S3Upload(objKey, bytes.NewReader(data))
 }
 
-// S3GeneratePresignedURL generates a presigned URL for client-side upload
+// S3GeneratePresignedURL generates a presigned URL for client-side upload using SDK v2
 func S3GeneratePresignedURL(objKey string, expiration time.Duration) (string, error) {
 	if globalConfig == nil {
 		return "", fmt.Errorf("AWS config not set")
@@ -57,18 +60,27 @@ func S3GeneratePresignedURL(objKey string, expiration time.Duration) (string, er
 	region := globalConfig.S3.Region
 	objKey = strings.TrimLeft(objKey, "/")
 
-	sess, err := createSession(region)
+	cfg, err := loadConfig(region)
 	if err != nil {
 		return "", err
 	}
 
-	svc := s3.New(sess)
-	req, _ := svc.PutObjectRequest(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(objKey),
+	client := s3.NewFromConfig(cfg)
+	presignClient := s3.NewPresignClient(client)
+
+	ctx := context.Background()
+	presignResult, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: awsv2.String(bucket),
+		Key:    awsv2.String(objKey),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiration
 	})
 
-	return req.Presign(expiration)
+	if err != nil {
+		return "", err
+	}
+
+	return presignResult.URL, nil
 }
 
 // PresignedPostData represents presigned POST form data
@@ -78,31 +90,14 @@ type PresignedPostData struct {
 }
 
 // S3GeneratePresignedPOSTURL generates presigned POST URL and form data for client upload
+// Note: AWS SDK v2 doesn't have direct POST presign support, so we use PUT presigned URL
 func S3GeneratePresignedPOSTURL(objKey string, expiration time.Duration) (*PresignedPostData, error) {
 	if globalConfig == nil {
 		return nil, fmt.Errorf("AWS config not set")
 	}
 
-	bucket := globalConfig.S3.Bucket
-	region := globalConfig.S3.Region
-	objKey = strings.TrimLeft(objKey, "/")
-
-	sess, err := createSession(region)
-	if err != nil {
-		return nil, err
-	}
-
-	svc := s3.New(sess)
-	
-	// Create a presigned POST request using the S3 service
-	req, _ := svc.PutObjectRequest(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(objKey),
-	})
-
-	// For POST uploads, we'll generate a PUT presigned URL instead
-	// as AWS SDK v1 doesn't have PresignedPost method
-	url, err := req.Presign(expiration)
+	// For SDK v2, we'll use PUT presigned URL (same as S3GeneratePresignedURL)
+	url, err := S3GeneratePresignedURL(objKey, expiration)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +113,7 @@ func S3GeneratePresignedPOSTURL(objKey string, expiration time.Duration) (*Presi
 // S3HandleImageUpload handles image upload with validation and processing
 func S3HandleImageUpload(
 	keyFunc func(c *gin.Context) string,
-	beforeUpload func(c *gin.Context, file io.ReadSeeker) (io.ReadSeekCloser, error),
+	beforeUpload func(c *gin.Context, file io.Reader) (io.ReadCloser, error),
 	afterUpload func(c *gin.Context, url string) error) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
@@ -142,7 +137,7 @@ func S3HandleImageUpload(
 			return
 		}
 
-		var processedFile io.ReadSeekCloser = f
+		var processedFile io.ReadCloser = f
 		if beforeUpload != nil {
 			processedFile, err = beforeUpload(c, f)
 			if err != nil {
