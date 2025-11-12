@@ -6,4 +6,5 @@ use (
 	./deepl
 	./mail
 	./redis
+	./unred
 )

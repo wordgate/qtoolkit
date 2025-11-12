@@ -1,0 +1,3 @@
+unred:
+  api_endpoint: "api.x.all7.cc"      # Unred API 端点
+  secret_key: "YOUR_SECRET_KEY"       # 管理接口密钥

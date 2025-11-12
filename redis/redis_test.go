@@ -3,14 +3,22 @@ package redis
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 func setupTestRedis() {
-	// 设置测试Redis配置环境变量
-	os.Setenv("REDIS_ADDR", "localhost:6379")
-	os.Setenv("REDIS_PASSWORD", "")
+	// 重置单例客户端
+	clientOnce = sync.Once{}
+	defaultClient = nil
+
+	// 使用 viper 设置测试配置
+	viper.Set("redis.addr", "localhost:6379")
+	viper.Set("redis.password", "")
+	viper.Set("redis.db", 0)
 }
 
 func TestRedisConnection(t *testing.T) {
