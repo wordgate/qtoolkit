@@ -65,46 +65,18 @@ func loadConfigFromViper() (*Config, error) {
 	return cfg, nil
 }
 
-// SetConfig sets the EC2 configuration for lazy loading (deprecated)
-// Use viper configuration instead
-func SetConfig(cfg *Config) {
-	configMux.Lock()
-	defer configMux.Unlock()
-	globalConfig = cfg
-}
-
-// GetConfig returns the current EC2 configuration
-func GetConfig() *Config {
-	configMux.RLock()
-	defer configMux.RUnlock()
-	return globalConfig
-}
-
 // initialize performs the actual EC2 client initialization
 func initialize() {
-	// Try to load from viper first
 	cfg, err := loadConfigFromViper()
 	if err != nil {
-		// Fall back to SetConfig if viper config not available
-		configMux.RLock()
-		cfg = globalConfig
-		configMux.RUnlock()
-
-		if cfg == nil {
-			initErr = fmt.Errorf("EC2 config not available: %v", err)
-			return
-		}
-	} else {
-		// Store loaded config
-		configMux.Lock()
-		globalConfig = cfg
-		configMux.Unlock()
-	}
-
-	if cfg.Region == "" {
-		initErr = fmt.Errorf("EC2 region is required")
+		initErr = fmt.Errorf("failed to load EC2 config: %v", err)
 		return
 	}
+
+	// Store config for later use
+	configMux.Lock()
+	globalConfig = cfg
+	configMux.Unlock()
 
 	awsCfg, err := loadConfig(cfg.Region, cfg)
 	if err != nil {

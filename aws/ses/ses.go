@@ -85,41 +85,18 @@ func loadConfigFromViper() (*Config, error) {
 	return cfg, nil
 }
 
-// SetConfig sets the SES configuration for lazy loading (deprecated)
-// Use viper configuration instead
-func SetConfig(cfg *Config) {
-	configMux.Lock()
-	defer configMux.Unlock()
-	globalConfig = cfg
-}
-
-// GetConfig returns the current SES configuration
-func GetConfig() *Config {
-	configMux.RLock()
-	defer configMux.RUnlock()
-	return globalConfig
-}
-
 // initialize performs the actual SES client initialization
 func initialize() {
-	// Try to load from viper first
 	cfg, err := loadConfigFromViper()
 	if err != nil {
-		// Fall back to SetConfig if viper config not available
-		configMux.RLock()
-		cfg = globalConfig
-		configMux.RUnlock()
-
-		if cfg == nil {
-			initErr = fmt.Errorf("SES config not available: %v", err)
-			return
-		}
-	} else {
-		// Store loaded config
-		configMux.Lock()
-		globalConfig = cfg
-		configMux.Unlock()
+		initErr = fmt.Errorf("failed to load SES config: %v", err)
+		return
 	}
+
+	// Store config for later use
+	configMux.Lock()
+	globalConfig = cfg
+	configMux.Unlock()
 
 	// Default SES region
 	region := "us-east-1"

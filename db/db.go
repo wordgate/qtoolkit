@@ -16,27 +16,10 @@ type Config struct {
 }
 
 var (
-	globalDB   *gorm.DB
-	globalCfg  *Config
-	initOnce   sync.Once
-	initErr    error
-	configMux  sync.RWMutex
+	globalDB  *gorm.DB
+	initOnce  sync.Once
+	initErr   error
 )
-
-// SetConfig sets the database configuration for lazy loading
-// This must be called before the first Get() call
-func SetConfig(cfg *Config) {
-	configMux.Lock()
-	defer configMux.Unlock()
-	globalCfg = cfg
-}
-
-// GetConfig returns the current database configuration
-func GetConfig() *Config {
-	configMux.RLock()
-	defer configMux.RUnlock()
-	return globalCfg
-}
 
 // loadConfigFromViper loads database configuration from viper
 // Configuration path: database.dsn and database.debug
@@ -58,27 +41,9 @@ func loadConfigFromViper() (*Config, error) {
 // initialize performs the actual database initialization
 // This is called once via sync.Once
 func initialize() {
-	// Try to load from viper first
 	cfg, err := loadConfigFromViper()
 	if err != nil {
-		// Fall back to SetConfig if viper config not available
-		configMux.RLock()
-		cfg = globalCfg
-		configMux.RUnlock()
-
-		if cfg == nil {
-			initErr = fmt.Errorf("database config not available: %v", err)
-			return
-		}
-	} else {
-		// Store loaded config
-		configMux.Lock()
-		globalCfg = cfg
-		configMux.Unlock()
-	}
-
-	if cfg.DSN == "" {
-		initErr = fmt.Errorf("database DSN is required")
+		initErr = fmt.Errorf("failed to load database config: %v", err)
 		return
 	}
 
@@ -144,9 +109,6 @@ func Close() error {
 // Reset resets the database instance and initialization state
 // This is mainly useful for testing
 func Reset() {
-	configMux.Lock()
-	defer configMux.Unlock()
-
 	if globalDB != nil {
 		sqlDB, _ := globalDB.DB()
 		if sqlDB != nil {
@@ -155,7 +117,6 @@ func Reset() {
 	}
 
 	globalDB = nil
-	globalCfg = nil
 	initErr = nil
 	initOnce = sync.Once{}
 }
