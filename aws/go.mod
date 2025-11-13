@@ -6,8 +6,11 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.39.2
 	github.com/aws/aws-sdk-go-v2/config v1.31.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.16
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.200.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.4
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.53.5
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.59.2
 	github.com/gin-gonic/gin v1.10.1
 )
 

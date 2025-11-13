@@ -1,24 +1,36 @@
-package aws
+package ses
 
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 )
 
+// Config represents SES configuration
+type Config struct {
+	AccessKey   string `yaml:"access_key" json:"access_key"`
+	SecretKey   string `yaml:"secret_key" json:"secret_key"`
+	UseIMDS     bool   `yaml:"use_imds" json:"use_imds"`
+	Region      string `yaml:"region" json:"region"`
+	DefaultFrom string `yaml:"default_from" json:"default_from"`
+}
+
 // EmailRequest represents a simplified email sending request
 type EmailRequest struct {
-	From        string   // Sender email (must be verified in SES)
-	To          []string // Recipient email addresses
-	Subject     string   // Email subject
-	BodyText    string   // Plain text body (optional if BodyHTML is provided)
-	BodyHTML    string   // HTML body (optional if BodyText is provided)
-	ReplyTo     []string // Reply-to addresses (optional)
-	CC          []string // CC addresses (optional)
-	BCC         []string // BCC addresses (optional)
+	From     string   // Sender email (must be verified in SES)
+	To       []string // Recipient email addresses
+	Subject  string   // Email subject
+	BodyText string   // Plain text body (optional if BodyHTML is provided)
+	BodyHTML string   // HTML body (optional if BodyText is provided)
+	ReplyTo  []string // Reply-to addresses (optional)
+	CC       []string // CC addresses (optional)
+	BCC      []string // BCC addresses (optional)
 }
 
 // EmailResponse contains the result of sending an email
@@ -28,25 +40,97 @@ type EmailResponse struct {
 	Error     error  // Error if sending failed
 }
 
+var (
+	globalConfig *Config
+	globalClient *sesv2.Client
+	clientOnce   sync.Once
+	initErr      error
+	configMux    sync.RWMutex
+)
+
+// SetConfig sets the SES configuration for lazy loading
+func SetConfig(cfg *Config) {
+	configMux.Lock()
+	defer configMux.Unlock()
+	globalConfig = cfg
+}
+
+// GetConfig returns the current SES configuration
+func GetConfig() *Config {
+	configMux.RLock()
+	defer configMux.RUnlock()
+	return globalConfig
+}
+
+// initialize performs the actual SES client initialization
+func initialize() {
+	configMux.RLock()
+	cfg := globalConfig
+	configMux.RUnlock()
+
+	if cfg == nil {
+		initErr = fmt.Errorf("SES config not set, call SetConfig() first")
+		return
+	}
+
+	// Default SES region
+	region := "us-east-1"
+	if cfg.Region != "" {
+		region = cfg.Region
+	}
+
+	ctx := context.Background()
+	var awsCfg awsv2.Config
+	var err error
+
+	// If UseIMDS is explicitly set to false, use static credentials
+	if !cfg.UseIMDS {
+		if cfg.AccessKey != "" && cfg.SecretKey != "" {
+			awsCfg, err = config.LoadDefaultConfig(ctx,
+				config.WithRegion(region),
+				config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+					cfg.AccessKey,
+					cfg.SecretKey,
+					"",
+				)),
+			)
+		} else {
+			initErr = fmt.Errorf("UseIMDS is false but AccessKey/SecretKey are not configured")
+			return
+		}
+	} else {
+		awsCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	}
+
+	if err != nil {
+		initErr = fmt.Errorf("failed to load AWS config: %v", err)
+		return
+	}
+
+	globalClient = sesv2.NewFromConfig(awsCfg)
+	initErr = nil
+}
+
+// getClient returns the SES client with lazy initialization
+func getClient() (*sesv2.Client, error) {
+	clientOnce.Do(initialize)
+	if initErr != nil {
+		return nil, initErr
+	}
+	return globalClient, nil
+}
+
 // SendEmail sends an email using AWS SES with simplified configuration
-// It supports multiple authentication methods:
-// 1. Explicit credentials via SetConfig() - for development/external servers
-// 2. EC2 IAM Role - automatic when running on EC2 (no config needed)
-// 3. Environment variables - AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 func SendEmail(req *EmailRequest) (*EmailResponse, error) {
 	// Validate required fields
 	if err := validateEmailRequest(req); err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
 
-	// Create AWS config
-	cfg, err := createSESConfig()
+	client, err := getClient()
 	if err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
-
-	// Create SES v2 service client
-	client := sesv2.NewFromConfig(cfg)
 
 	// Build email input
 	input := buildSESv2Input(req)
@@ -66,7 +150,6 @@ func SendEmail(req *EmailRequest) (*EmailResponse, error) {
 }
 
 // SendSimpleEmail is a convenience function for sending basic text emails
-// Usage: SendSimpleEmail("from@example.com", "to@example.com", "Subject", "Body text")
 func SendSimpleEmail(from, to, subject, body string) (*EmailResponse, error) {
 	return SendEmail(&EmailRequest{
 		From:     from,
@@ -77,7 +160,6 @@ func SendSimpleEmail(from, to, subject, body string) (*EmailResponse, error) {
 }
 
 // SendHTMLEmail is a convenience function for sending HTML emails
-// Usage: SendHTMLEmail("from@example.com", "to@example.com", "Subject", "<h1>HTML Body</h1>")
 func SendHTMLEmail(from, to, subject, htmlBody string) (*EmailResponse, error) {
 	return SendEmail(&EmailRequest{
 		From:     from,
@@ -88,39 +170,31 @@ func SendHTMLEmail(from, to, subject, htmlBody string) (*EmailResponse, error) {
 }
 
 // SendMail sends a plain text email using the default sender from config
-// This is a simplified function that uses the configured default_from address
-// Usage: SendMail("recipient@example.com", "Subject", "Body text")
-// Note: Requires SES.DefaultFrom to be configured in SetConfig(), or will return an error
 func SendMail(to, subject, content string) error {
-	from := getDefaultFrom()
-	if from == "" {
-		return fmt.Errorf("default sender (SES.DefaultFrom) not configured, use SendSimpleEmail() instead or configure SetConfig()")
+	configMux.RLock()
+	cfg := globalConfig
+	configMux.RUnlock()
+
+	if cfg == nil || cfg.DefaultFrom == "" {
+		return fmt.Errorf("default sender (DefaultFrom) not configured, use SendSimpleEmail() instead")
 	}
 
-	_, err := SendSimpleEmail(from, to, subject, content)
+	_, err := SendSimpleEmail(cfg.DefaultFrom, to, subject, content)
 	return err
 }
 
 // SendRichMail sends an HTML email using the default sender from config
-// This is a simplified function that uses the configured default_from address
-// Usage: SendRichMail("recipient@example.com", "Subject", "<h1>HTML Body</h1>")
-// Note: Requires SES.DefaultFrom to be configured in SetConfig(), or will return an error
 func SendRichMail(to, subject, htmlContent string) error {
-	from := getDefaultFrom()
-	if from == "" {
-		return fmt.Errorf("default sender (SES.DefaultFrom) not configured, use SendHTMLEmail() instead or configure SetConfig()")
+	configMux.RLock()
+	cfg := globalConfig
+	configMux.RUnlock()
+
+	if cfg == nil || cfg.DefaultFrom == "" {
+		return fmt.Errorf("default sender (DefaultFrom) not configured, use SendHTMLEmail() instead")
 	}
 
-	_, err := SendHTMLEmail(from, to, subject, htmlContent)
+	_, err := SendHTMLEmail(cfg.DefaultFrom, to, subject, htmlContent)
 	return err
-}
-
-// getDefaultFrom returns the default sender email from config
-func getDefaultFrom() string {
-	if globalConfig != nil && globalConfig.SES.DefaultFrom != "" {
-		return globalConfig.SES.DefaultFrom
-	}
-	return ""
 }
 
 // validateEmailRequest validates the email request
@@ -192,24 +266,19 @@ func buildSESv2Input(req *EmailRequest) *sesv2.SendEmailInput {
 	return input
 }
 
-// createSESConfig creates an AWS config for SES v2
-func createSESConfig() (awsv2.Config, error) {
-	// Determine the region to use
-	region := "us-east-1" // Default SES region
-
-	if globalConfig != nil {
-		// Use configured region if available
-		if globalConfig.SES.Region != "" {
-			region = globalConfig.SES.Region
-		} else if globalConfig.Region != "" {
-			region = globalConfig.Region
-		}
-	}
-
-	return loadConfig(region)
-}
-
 // strPtr is a helper function to get a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// Reset resets the SES client and configuration
+// This is mainly useful for testing
+func Reset() {
+	configMux.Lock()
+	defer configMux.Unlock()
+
+	globalConfig = nil
+	globalClient = nil
+	initErr = nil
+	clientOnce = sync.Once{}
 }

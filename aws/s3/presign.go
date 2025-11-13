@@ -1,4 +1,4 @@
-package aws
+package s3
 
 import (
 	"encoding/json"
@@ -25,6 +25,7 @@ type PresignResponse struct {
 }
 
 // HandlePresignedURL generates presigned URLs for client-side uploads
+// This is a Gin handler that can be used directly in routes
 func HandlePresignedURL() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req PresignRequest
@@ -40,9 +41,9 @@ func HandlePresignedURL() gin.HandlerFunc {
 		}
 
 		duration := time.Duration(expiration) * time.Minute
-		
+
 		// Generate PUT presigned URL (simpler for client)
-		url, err := S3GeneratePresignedURL(req.Filename, duration)
+		url, err := GeneratePresignedURL(req.Filename, duration)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to generate presigned URL: " + err.Error()})
 			return
@@ -62,6 +63,7 @@ func HandlePresignedURL() gin.HandlerFunc {
 }
 
 // HandlePresignedPOSTURL generates presigned POST URLs with form data
+// This is a Gin handler that can be used directly in routes
 func HandlePresignedPOSTURL() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req PresignRequest
@@ -76,8 +78,8 @@ func HandlePresignedPOSTURL() gin.HandlerFunc {
 		}
 
 		duration := time.Duration(expiration) * time.Minute
-		
-		presignedPost, err := S3GeneratePresignedPOSTURL(req.Filename, duration)
+
+		presignedPost, err := GeneratePresignedPOSTURL(req.Filename, duration)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to generate presigned POST URL: " + err.Error()})
 			return
@@ -114,7 +116,7 @@ func SimplePresignedURLHandler() http.HandlerFunc {
 			}
 		}
 
-		url, err := S3GeneratePresignedURL(filename, expiration)
+		url, err := GeneratePresignedURL(filename, expiration)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to generate presigned URL: %v", err), http.StatusInternalServerError)
 			return

@@ -17,6 +17,7 @@ type Config struct {
 	UseIMDS   bool      `yaml:"use_imds" json:"use_imds"`     // Use EC2 IMDS for credentials (default: true)
 	S3        S3Config  `yaml:"s3" json:"s3"`
 	SES       SESConfig `yaml:"ses" json:"ses"`
+	SQS       SQSConfig `yaml:"sqs" json:"sqs"`
 }
 
 // S3Config represents S3 specific configuration
@@ -32,6 +33,12 @@ type SESConfig struct {
 	DefaultFrom string `yaml:"default_from" json:"default_from"`  // Default sender email (optional)
 }
 
+// SQSConfig represents SQS specific configuration
+type SQSConfig struct {
+	Region    string `yaml:"region" json:"region"`          // SQS region (optional, uses global region if not set)
+	QueueName string `yaml:"queue_name" json:"queue_name"`  // Default queue name (optional)
+}
+
 var globalConfig *Config
 
 // SetConfig sets the global AWS configuration
@@ -44,9 +51,9 @@ func GetConfig() *Config {
 	return globalConfig
 }
 
-// loadConfig loads AWS configuration (v2 SDK style)
+// LoadConfig loads AWS configuration (v2 SDK style)
 // It returns awsv2.Config that can be used with AWS SDK v2 clients
-func loadConfig(region string) (awsv2.Config, error) {
+func LoadConfig(region string) (awsv2.Config, error) {
 	ctx := context.Background()
 
 	// If UseIMDS is explicitly set to false, use static credentials

@@ -1,0 +1,25 @@
+# SES Configuration Example
+# Copy this file and replace with your actual values
+
+# AWS Credentials (optional if using EC2 IAM role)
+access_key: "YOUR_AWS_ACCESS_KEY"
+secret_key: "YOUR_AWS_SECRET_KEY"
+
+# Use EC2 Instance Metadata Service (IMDS) for credentials
+# Set to true when running on EC2 with IAM role
+# Set to false to use static credentials (access_key/secret_key)
+use_imds: true
+
+# SES Region
+# us-east-1 is recommended as it's the primary SES region
+region: "us-east-1"
+
+# Default sender email address (must be verified in SES)
+# This is optional but recommended for simpler API usage
+# When set, you can use SendMail() without specifying the sender
+default_from: "noreply@yourdomain.com"
+
+# Note: Before using SES, you must:
+# 1. Verify your sender email address or domain in AWS SES console
+# 2. If in sandbox mode, also verify recipient email addresses
+# 3. Request production access to send to any email address

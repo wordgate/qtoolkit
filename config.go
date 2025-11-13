@@ -30,5 +30,6 @@ func SetConfigFile(file string) {
 	}
 	topic := filepath.Base(os.Args[0])
 	log.InitLogger(topic)
-	initDb()
+	// DB is now lazy loaded - no need to init here
+	// Call db.SetConfig() if you need to configure database
 }

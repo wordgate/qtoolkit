@@ -1,25 +1,22 @@
-package aws_test
+package ses_test
 
 import (
 	"fmt"
 
-	"github.com/wordgate/qtoolkit/aws"
+	"github.com/wordgate/qtoolkit/aws/ses"
 )
 
 // ExampleSendMail demonstrates the ultra-simple API using default sender
 func ExampleSendMail() {
-	// Configure default sender once
-	config := &aws.Config{
-		Region: "us-east-1",
-		SES: aws.SESConfig{
-			Region:      "us-east-1",
-			DefaultFrom: "noreply@yourdomain.com",
-		},
-	}
-	aws.SetConfig(config)
+	// Configure SES once
+	ses.SetConfig(&ses.Config{
+		Region:      "us-east-1",
+		DefaultFrom: "noreply@yourdomain.com",
+		UseIMDS:     true,
+	})
 
-	// Then just use 3 parameters!
-	err := aws.SendMail("user@example.com", "Welcome", "Thank you for signing up!")
+	// Then just use 3 parameters! (automatically initialized on first call)
+	err := ses.SendMail("user@example.com", "Welcome", "Thank you for signing up!")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -30,19 +27,16 @@ func ExampleSendMail() {
 
 // ExampleSendRichMail demonstrates sending HTML email using default sender
 func ExampleSendRichMail() {
-	// Configure default sender once
-	config := &aws.Config{
-		Region: "us-east-1",
-		SES: aws.SESConfig{
-			Region:      "us-east-1",
-			DefaultFrom: "noreply@yourdomain.com",
-		},
-	}
-	aws.SetConfig(config)
+	// Configure SES once
+	ses.SetConfig(&ses.Config{
+		Region:      "us-east-1",
+		DefaultFrom: "noreply@yourdomain.com",
+		UseIMDS:     true,
+	})
 
 	// Send HTML email with 3 parameters
 	htmlContent := "<h1>Newsletter</h1><p>Check out our latest updates!</p>"
-	err := aws.SendRichMail("user@example.com", "Monthly Newsletter", htmlContent)
+	err := ses.SendRichMail("user@example.com", "Monthly Newsletter", htmlContent)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -53,17 +47,14 @@ func ExampleSendRichMail() {
 
 // ExampleSendSimpleEmail demonstrates sending a simple text email
 func ExampleSendSimpleEmail() {
-	// Configure AWS (optional on EC2 with IAM Role)
-	config := &aws.Config{
-		Region: "us-east-1",
-		SES: aws.SESConfig{
-			Region: "us-east-1",
-		},
-	}
-	aws.SetConfig(config)
+	// Configure SES (optional on EC2 with IAM Role)
+	ses.SetConfig(&ses.Config{
+		Region:  "us-east-1",
+		UseIMDS: true,
+	})
 
 	// Send a simple email
-	resp, err := aws.SendSimpleEmail(
+	resp, err := ses.SendSimpleEmail(
 		"sender@example.com",
 		"recipient@example.com",
 		"Test Email",
@@ -80,8 +71,13 @@ func ExampleSendSimpleEmail() {
 
 // ExampleSendHTMLEmail demonstrates sending an HTML email
 func ExampleSendHTMLEmail() {
+	ses.SetConfig(&ses.Config{
+		Region:  "us-east-1",
+		UseIMDS: true,
+	})
+
 	// Send HTML email
-	resp, err := aws.SendHTMLEmail(
+	resp, err := ses.SendHTMLEmail(
 		"noreply@example.com",
 		"user@example.com",
 		"Welcome!",
@@ -98,8 +94,13 @@ func ExampleSendHTMLEmail() {
 
 // ExampleSendEmail demonstrates sending an email with all options
 func ExampleSendEmail() {
+	ses.SetConfig(&ses.Config{
+		Region:  "us-east-1",
+		UseIMDS: true,
+	})
+
 	// Send email with CC, BCC, and Reply-To
-	resp, err := aws.SendEmail(&aws.EmailRequest{
+	resp, err := ses.SendEmail(&ses.EmailRequest{
 		From:     "noreply@example.com",
 		To:       []string{"user1@example.com", "user2@example.com"},
 		CC:       []string{"manager@example.com"},
@@ -120,10 +121,14 @@ func ExampleSendEmail() {
 
 // ExampleSendEmail_ec2IAMRole demonstrates sending email on EC2 without explicit credentials
 func ExampleSendEmail_ec2IAMRole() {
-	// On EC2 with IAM Role, no configuration needed!
+	// On EC2 with IAM Role, minimal configuration needed!
 	// The SDK will automatically use the instance's IAM Role
+	ses.SetConfig(&ses.Config{
+		Region:  "us-east-1",
+		UseIMDS: true, // Use EC2 IAM role
+	})
 
-	resp, err := aws.SendSimpleEmail(
+	resp, err := ses.SendSimpleEmail(
 		"noreply@example.com",
 		"user@example.com",
 		"Test from EC2",

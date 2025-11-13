@@ -1,0 +1,17 @@
+# SQS Configuration Example
+# Copy this file and replace with your actual values
+
+# AWS Credentials (optional if using EC2 IAM role)
+access_key: "YOUR_AWS_ACCESS_KEY"
+secret_key: "YOUR_AWS_SECRET_KEY"
+
+# Use EC2 Instance Metadata Service (IMDS) for credentials
+# Set to true when running on EC2 with IAM role
+# Set to false to use static credentials (access_key/secret_key)
+use_imds: true
+
+# SQS Region
+region: "us-east-1"
+
+# Queue name (optional, can be set per client)
+queue_name: "my-queue"
