@@ -52,7 +52,7 @@ func godaddyRequest(method string, path string, data interface{}) (*godaddyResp,
 	return nil, fmt.Errorf("request godaddy err with status:%d", resp.StatusCode)
 }
 
-func GodaddyDomainAddARecord(domain, name, data string) error {
+func DomainAddARecord(domain, name, data string) error {
 	path := fmt.Sprintf("/v1/domains/%s/records", domain)
 	body := []interface{}{
 		map[string]interface{}{
@@ -71,13 +71,13 @@ func GodaddyDomainAddARecord(domain, name, data string) error {
 	return err
 }
 
-func GodaddyDomainDelARecord(domain, name string) error {
+func DomainDelARecord(domain, name string) error {
 	path := fmt.Sprintf("/v1/domains/%s/records/A/%s", domain, name)
 	_, err := godaddyRequest(http.MethodDelete, path, nil)
 	return err
 }
 
-func GodaddyDomainGetARecord(domain, name string) (string, error) {
+func DomainGetARecord(domain, name string) (string, error) {
 	path := fmt.Sprintf("/v1/domains/%s/records/A/%s", domain, name)
 	resp, err := godaddyRequest(http.MethodGet, path, nil)
 	if err != nil {

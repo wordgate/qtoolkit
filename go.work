@@ -16,4 +16,5 @@ use (
 	./redis
 	./slack
 	./unred
+	./util
 )

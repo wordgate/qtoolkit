@@ -20,7 +20,7 @@ import (
 // aliyun.log.interval_ms: 3000
 // aliyun.access_key: YOUR_ALIYUN_ACCESS_KEY
 // aliyun.access_secret: YOUR_ALIYUN_ACCESS_SECRET
-func AliyunLog(topic string) *logrus.Logger {
+func Log(topic string) *logrus.Logger {
 	url := viper.GetString("aliyun.log.url")
 	accessKey := viper.GetString("aliyun.log.access_key")
 	accessSecret := viper.GetString("aliyun.log.access_secret")

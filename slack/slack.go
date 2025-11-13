@@ -9,15 +9,15 @@ import (
 	"github.com/spf13/viper"
 )
 
-func SlackAlert(text string) error {
-	return SlackSend("alert", text)
+func Alert(text string) error {
+	return Send("alert", text)
 }
 
-func SlackVerifyCode(text string) error {
-	return SlackSend("verify_code", text)
+func VerifyCode(text string) error {
+	return Send("verify_code", text)
 }
 
-func SlackSend(channel string, text string) error {
+func Send(channel string, text string) error {
 
 	url := viper.GetString(fmt.Sprintf("slack.%s", channel))
 	data := map[string]string{
