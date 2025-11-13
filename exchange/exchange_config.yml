@@ -1,0 +1,26 @@
+# Exchange Rate API Configuration Template
+# Add this to your main config.yml file
+
+exchange_rate:
+  # Exchange Rate API Key
+  # Get your free API key from https://www.exchangerate-api.com/
+  api_key: "YOUR_EXCHANGE_RATE_API_KEY"
+
+  # Optional: Cache TTL in seconds (default: 3600 = 1 hour)
+  # cache_ttl: 3600
+
+  # Optional: Base currency for exchange rates (default: USD)
+  # base_currency: "USD"
+
+# Usage Example:
+# rates, err := exchange.Get("USD")
+# if err != nil {
+#     log.Fatal(err)
+# }
+# fmt.Printf("USD to CNY rate: %.2f\n", rates["CNY"])
+
+# Security Notes:
+# - Never commit real API keys to version control
+# - Use environment variables for production: export EXCHANGE_RATE_API_KEY=your_key
+# - Free tier has rate limits - monitor usage
+# - Rotate API keys periodically

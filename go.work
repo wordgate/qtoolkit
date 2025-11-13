@@ -7,9 +7,9 @@ use (
 	./aws/s3
 	./aws/ses
 	./aws/sqs
-	./core
 	./db
 	./deepl
+	./exchange
 	./godaddy
 	./log
 	./mail
