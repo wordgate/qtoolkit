@@ -1,0 +1,35 @@
+# DeepL Translation API Configuration Template
+# Add this to your main config.yml file
+
+deepl:
+  # DeepL API Key (required)
+  # Get your API key from: https://www.deepl.com/pro-api
+  # Can also be set via DEEPL_API_KEY environment variable (takes priority)
+  api_key: "YOUR_DEEPL_API_KEY"
+
+  # DeepL API Server URL (optional)
+  # Free API: https://api-free.deepl.com (default)
+  # Pro API:  https://api.deepl.com
+  server_url: "https://api-free.deepl.com"
+
+# Security Notes:
+# - Never commit real API keys to version control
+# - Use environment variables for production: export DEEPL_API_KEY="your-key"
+# - Free API has usage limits, upgrade to Pro for higher limits
+# - Rotate API keys regularly
+
+# Example configurations:
+#
+# Free API (default):
+# deepl:
+#   api_key: "your-free-api-key:fx"
+#   server_url: "https://api-free.deepl.com"
+#
+# Pro API:
+# deepl:
+#   api_key: "your-pro-api-key"
+#   server_url: "https://api.deepl.com"
+#
+# Using environment variable (recommended for production):
+# export DEEPL_API_KEY="your-api-key"
+# # No need to set api_key in config file

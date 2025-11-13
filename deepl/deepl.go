@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/cluttrdev/deepl-go/deepl"
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 // 全局单例客户端
@@ -22,48 +22,49 @@ var (
 	templateTagRegex = regexp.MustCompile(`\{\{[^}]*\}\}`)
 )
 
-// ConfigWrapper 外层配置结构
-type ConfigWrapper struct {
-	DeepL Config `yaml:"deepl"`
+// Config 配置结构
+type Config struct {
+	APIKey    string `yaml:"api_key" json:"api_key"`
+	ServerURL string `yaml:"server_url" json:"server_url"` // 免费版: https://api-free.deepl.com, 付费版: https://api.deepl.com
 }
 
-// Config 配置结构 - 仅保留必要字段
-type Config struct {
-	APIKey string `yaml:"api_key"`
+// loadConfigFromViper loads DeepL configuration from viper
+// Configuration path: deepl.api_key, deepl.server_url
+// Priority: Environment variable > Viper config
+func loadConfigFromViper() (*Config, error) {
+	cfg := &Config{}
+
+	// 优先从环境变量获取 API Key
+	if apiKey := os.Getenv("DEEPL_API_KEY"); apiKey != "" {
+		cfg.APIKey = apiKey
+	} else {
+		cfg.APIKey = viper.GetString("deepl.api_key")
+	}
+
+	// Server URL 从 viper 读取，默认使用免费版
+	cfg.ServerURL = viper.GetString("deepl.server_url")
+	if cfg.ServerURL == "" {
+		cfg.ServerURL = "https://api-free.deepl.com"
+	}
+
+	// 验证必需字段
+	if cfg.APIKey == "" || cfg.APIKey == "YOUR_DEEPL_API_KEY" {
+		return nil, fmt.Errorf("deepl api key not configured (check DEEPL_API_KEY env or deepl.api_key)")
+	}
+
+	return cfg, nil
 }
 
 // getClient 获取或创建单例客户端
 func getClient() (*deepl.Translator, error) {
 	clientOnce.Do(func() {
-		var wrapper ConfigWrapper
-
-		// 优先从环境变量获取
-		if apiKey := os.Getenv("DEEPL_API_KEY"); apiKey != "" {
-			wrapper.DeepL.APIKey = apiKey
-		} else {
-			// 尝试从配置文件加载
-			configPaths := []string{
-				"deepl_config.yml",
-				"deepl/deepl_config.yml",
-				"config/deepl.yml",
-			}
-
-			for _, path := range configPaths {
-				if data, err := os.ReadFile(path); err == nil {
-					yaml.Unmarshal(data, &wrapper)
-					if wrapper.DeepL.APIKey != "" && wrapper.DeepL.APIKey != "YOUR_DEEPL_API_KEY" {
-						break
-					}
-				}
-			}
-		}
-
-		if wrapper.DeepL.APIKey == "" || wrapper.DeepL.APIKey == "YOUR_DEEPL_API_KEY" {
-			clientErr = fmt.Errorf("deepl api key not configured")
+		cfg, err := loadConfigFromViper()
+		if err != nil {
+			clientErr = fmt.Errorf("failed to load deepl config: %v", err)
 			return
 		}
 
-		defaultClient, clientErr = deepl.NewTranslator(wrapper.DeepL.APIKey, deepl.WithServerURL("https://api-free.deepl.com"))
+		defaultClient, clientErr = deepl.NewTranslator(cfg.APIKey, deepl.WithServerURL(cfg.ServerURL))
 	})
 	return defaultClient, clientErr
 }
