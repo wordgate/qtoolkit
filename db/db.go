@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -37,16 +38,43 @@ func GetConfig() *Config {
 	return globalCfg
 }
 
+// loadConfigFromViper loads database configuration from viper
+// Configuration path: database.dsn and database.debug
+func loadConfigFromViper() (*Config, error) {
+	cfg := &Config{}
+
+	// Load from viper
+	cfg.DSN = viper.GetString("database.dsn")
+	cfg.Debug = viper.GetBool("database.debug")
+
+	// Validate required fields
+	if cfg.DSN == "" {
+		return nil, fmt.Errorf("database DSN not configured (check database.dsn)")
+	}
+
+	return cfg, nil
+}
+
 // initialize performs the actual database initialization
 // This is called once via sync.Once
 func initialize() {
-	configMux.RLock()
-	cfg := globalCfg
-	configMux.RUnlock()
+	// Try to load from viper first
+	cfg, err := loadConfigFromViper()
+	if err != nil {
+		// Fall back to SetConfig if viper config not available
+		configMux.RLock()
+		cfg = globalCfg
+		configMux.RUnlock()
 
-	if cfg == nil {
-		initErr = fmt.Errorf("database config is nil, call SetConfig() first")
-		return
+		if cfg == nil {
+			initErr = fmt.Errorf("database config not available: %v", err)
+			return
+		}
+	} else {
+		// Store loaded config
+		configMux.Lock()
+		globalCfg = cfg
+		configMux.Unlock()
 	}
 
 	if cfg.DSN == "" {
@@ -54,12 +82,12 @@ func initialize() {
 		return
 	}
 
-	var err error
-	globalDB, err = gorm.Open(mysql.Open(cfg.DSN), &gorm.Config{
+	var dbErr error
+	globalDB, dbErr = gorm.Open(mysql.Open(cfg.DSN), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
-	if err != nil {
-		initErr = fmt.Errorf("failed to connect to database: %v", err)
+	if dbErr != nil {
+		initErr = fmt.Errorf("failed to connect to database: %v", dbErr)
 		return
 	}
 

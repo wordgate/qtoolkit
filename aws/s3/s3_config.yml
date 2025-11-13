@@ -1,25 +1,35 @@
-# S3 Configuration Example
-# Copy this file and replace with your actual values
+# AWS S3 Configuration Template
+# Add this to your main config.yml file
 
-# AWS Credentials (optional if using EC2 IAM role)
-access_key: "YOUR_AWS_ACCESS_KEY"
-secret_key: "YOUR_AWS_SECRET_KEY"
+aws:
+  s3:
+    # AWS Credentials
+    access_key: "YOUR_AWS_ACCESS_KEY"
+    secret_key: "YOUR_AWS_SECRET_KEY"
 
-# Use EC2 Instance Metadata Service (IMDS) for credentials
-# Set to true when running on EC2 with IAM role
-# Set to false to use static credentials (access_key/secret_key)
-use_imds: true
+    # Use EC2 Instance Metadata Service (IMDS) for credentials
+    # Set to true when running on EC2 with IAM role
+    # Set to false to use static credentials (access_key/secret_key)
+    use_imds: false
 
-# S3 Bucket Configuration
-bucket: "your-bucket-name"
-region: "us-east-1"
+    # S3 Bucket Configuration
+    bucket: "your-bucket-name"
+    region: "us-west-2"
 
-# URL prefix for uploaded files
-# This is the public URL prefix that will be prepended to object keys
-url_prefix: "https://your-bucket-name.s3.us-east-1.amazonaws.com"
+    # URL prefix for accessing uploaded files
+    # Format: https://<bucket>.s3.<region>.amazonaws.com
+    url_prefix: "https://your-bucket-name.s3.us-west-2.amazonaws.com"
 
-# Alternative URL prefix examples:
-# CloudFront CDN:
-# url_prefix: "https://d111111abcdef8.cloudfront.net"
-# Custom domain:
-# url_prefix: "https://cdn.yourdomain.com"
+    # Alternative URL prefix examples:
+    # CloudFront CDN:
+    # url_prefix: "https://d111111abcdef8.cloudfront.net"
+    # Custom domain:
+    # url_prefix: "https://cdn.yourdomain.com"
+
+# Security Notes:
+# - Never commit real credentials to version control
+# - Use environment variables for production:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# - Use IAM roles when running on EC2 (no credentials needed!)
+# - Set appropriate bucket policies and CORS settings
+# - Rotate credentials regularly

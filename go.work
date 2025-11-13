@@ -2,9 +2,19 @@ go 1.25.0
 
 use (
 	.
-	./aws
+	./aliyun
+	./appstore
+	./aws/ec2
+	./aws/s3
+	./aws/ses
+	./aws/sqs
+	./core
+	./db
 	./deepl
+	./godaddy
+	./log
 	./mail
 	./redis
+	./slack
 	./unred
 )

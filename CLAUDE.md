@@ -65,28 +65,65 @@ qtoolkit/
 └── *.go                     # 其他功能文件
 ```
 
-### v1.0 Architecture (Target/Modular)
-模块化架构，按服务独立：
+### v1.0 Architecture (Completed/Modular)
+模块化架构，按服务独立 - **16个独立模块**：
 ```
 qtoolkit/
-├── go.work                  # Workspace配置
+├── go.work                  # Workspace配置（包含全部16个模块）
+├── go.mod                   # 根模块
 ├── core/                    # 核心模块
 │   ├── go.mod
 │   ├── config.go           # 配置管理
-│   ├── event.go            # 事件系统  
+│   ├── event.go            # 事件系统
 │   ├── util/               # 工具库
-│   └── log/                # 日志模块
-├── aws/                     # AWS模块
-│   ├── go.mod              # 仅AWS SDK依赖
-│   ├── aws.go, aws_*.go
-│   └── aws_config.yml
+│   ├── exchange_rate_api.go # 汇率API
+│   ├── http_cache.go       # HTTP缓存
+│   ├── name_generator.go   # 名称生成器
+│   ├── number_encode.go    # 数字编码
+│   └── short_url.go        # 短链接服务
+├── aws/                     # AWS服务（独立子模块）
+│   ├── aws_config.yml      # 统一AWS配置模板
+│   ├── ec2/                # EC2模块
+│   │   ├── go.mod
+│   │   └── ec2_config.yml
+│   ├── s3/                 # S3模块
+│   │   ├── go.mod
+│   │   └── s3_config.yml
+│   ├── ses/                # SES模块
+│   │   ├── go.mod
+│   │   └── ses_config.yml
+│   └── sqs/                # SQS模块
+│       ├── go.mod
+│       └── sqs_config.yml
 ├── aliyun/                  # 阿里云模块
-├── slack/                   # Slack模块
-├── database/                # 数据库模块
-├── email/                   # 邮件模块
+│   ├── go.mod
+│   ├── aliyun_cms.go       # 云监控
+│   ├── aliyun_ecs.go       # ECS
+│   └── aliyun_log.go       # 日志服务
+├── db/                      # 数据库模块（GORM+MySQL）
+│   ├── go.mod
+│   └── db_config.yml
 ├── redis/                   # Redis模块
-├── godaddy/                 # GoDaddy模块
-└── integration/             # 其他集成
+│   ├── go.mod
+│   ├── redis.go            # 客户端
+│   ├── broadcast.go        # 广播
+│   └── cache.go            # 缓存
+├── mail/                    # 邮件模块
+│   └── go.mod
+├── slack/                   # Slack模块
+│   ├── go.mod
+│   └── slack_config.yml
+├── godaddy/                 # GoDaddy域名管理
+│   ├── go.mod
+│   └── godaddy_config.yml
+├── deepl/                   # DeepL翻译
+│   └── go.mod
+├── appstore/                # App Store集成
+│   └── go.mod
+├── log/                     # 日志模块
+│   └── go.mod
+└── unred/                   # 防标红短链接
+    └── go.mod
 ```
 
 ## v1.0 模块化开发规范
@@ -222,6 +259,418 @@ aws:
   secret_key: "YOUR_AWS_SECRET_KEY"
 ```
 
+## v1.0 Configuration Auto-Loading System
+
+### 核心原则
+
+v1.0架构的所有模块遵循统一的配置自动加载规则：
+
+1. **嵌套YAML结构**: 配置路径遵循 `服务.子服务.属性` 格式
+2. **级联配置回退**: 从具体到通用的多级配置查找
+3. **懒加载初始化**: 使用 `sync.Once` 实现首次使用时自动加载
+4. **线程安全**: 使用 `sync.RWMutex` 保护配置读写
+5. **向后兼容**: 保留 `SetConfig()` 作为废弃接口
+6. **外部透明**: 应用只需在启动时加载配置文件，模块自动完成配置
+
+### 配置文件结构
+
+#### 嵌套层级示例
+
+```yaml
+# config.yml - 应用主配置文件
+
+# 数据库配置
+database:
+  dsn: "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+  debug: false
+
+# AWS全局配置（所有AWS服务的默认值）
+aws:
+  # 全局认证凭证
+  access_key: "YOUR_AWS_ACCESS_KEY"
+  secret_key: "YOUR_AWS_SECRET_KEY"
+  region: "us-west-2"
+  use_imds: false  # EC2上可设置为true使用IAM角色
+
+  # S3服务特定配置
+  s3:
+    bucket: "my-bucket"
+    url_prefix: "https://s3.us-west-2.amazonaws.com/my-bucket"
+    # region: "us-east-1"  # 可选：覆盖全局region
+
+  # SES服务特定配置
+  ses:
+    default_from: "noreply@example.com"
+    # 继承全局的 access_key, secret_key, region
+
+  # EC2服务配置
+  ec2:
+    # 完全使用全局配置
+
+  # SQS队列特定配置（3级配置）
+  sqs:
+    # region: "us-east-1"  # 可选：SQS服务级别默认
+    queues:
+      notifications:
+        region: "us-east-1"
+      background-jobs:
+        region: "us-west-2"
+        access_key: "SPECIAL_KEY"  # 队列特定凭证
+
+# 其他服务配置
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+slack:
+  webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+aliyun:
+  access_key: "YOUR_ALIYUN_ACCESS_KEY"
+  access_secret: "YOUR_ALIYUN_ACCESS_SECRET"
+  region: "cn-hangzhou"
+
+godaddy:
+  api_key: "YOUR_GODADDY_API_KEY"
+  api_secret: "YOUR_GODADDY_API_SECRET"
+
+mail:
+  smtp_host: "smtp.example.com"
+  smtp_port: 587
+  username: "your@email.com"
+  password: "your_password"
+
+exchange_rate:
+  api_key: "YOUR_EXCHANGE_RATE_API_KEY"
+```
+
+### 级联配置回退 (Cascading Fallback)
+
+配置读取优先级从具体到通用：
+
+#### 标准服务 (2级回退)
+
+适用于: S3, SES, EC2, Database, Redis, Slack, Aliyun, GoDaddy, Mail
+
+```
+1. 服务特定配置 (aws.s3.region)
+2. 全局配置 (aws.region)
+```
+
+**实现示例** (aws/s3/s3.go):
+```go
+func loadConfigFromViper() (*Config, error) {
+    cfg := &Config{}
+
+    // 1. 服务特定配置
+    cfg.Region = viper.GetString("aws.s3.region")
+    cfg.AccessKey = viper.GetString("aws.s3.access_key")
+    cfg.SecretKey = viper.GetString("aws.s3.secret_key")
+    cfg.Bucket = viper.GetString("aws.s3.bucket")
+    cfg.URLPrefix = viper.GetString("aws.s3.url_prefix")
+
+    // 2. 全局AWS配置回退
+    if cfg.Region == "" {
+        cfg.Region = viper.GetString("aws.region")
+    }
+    if cfg.AccessKey == "" {
+        cfg.AccessKey = viper.GetString("aws.access_key")
+    }
+    if cfg.SecretKey == "" {
+        cfg.SecretKey = viper.GetString("aws.secret_key")
+    }
+    cfg.UseIMDS = viper.GetBool("aws.use_imds")
+
+    // 验证必需字段
+    if cfg.Bucket == "" {
+        return nil, fmt.Errorf("aws.s3.bucket is required")
+    }
+
+    return cfg, nil
+}
+```
+
+#### SQS队列 (3级回退)
+
+SQS支持按队列配置：
+
+```
+1. 队列特定配置 (aws.sqs.queues.my-queue.region)
+2. SQS服务配置 (aws.sqs.region)
+3. 全局AWS配置 (aws.region)
+```
+
+**实现示例** (aws/sqs/sqs.go):
+```go
+func loadConfigFromViper(queueName string) (*Config, error) {
+    cfg := &Config{QueueName: queueName}
+
+    // 1. 队列特定配置
+    queuePath := fmt.Sprintf("aws.sqs.queues.%s", queueName)
+    if viper.IsSet(queuePath) {
+        cfg.Region = viper.GetString(queuePath + ".region")
+        cfg.AccessKey = viper.GetString(queuePath + ".access_key")
+        cfg.SecretKey = viper.GetString(queuePath + ".secret_key")
+    }
+
+    // 2. SQS服务级别回退
+    if cfg.Region == "" {
+        cfg.Region = viper.GetString("aws.sqs.region")
+    }
+    if cfg.AccessKey == "" {
+        cfg.AccessKey = viper.GetString("aws.sqs.access_key")
+    }
+    if cfg.SecretKey == "" {
+        cfg.SecretKey = viper.GetString("aws.sqs.secret_key")
+    }
+
+    // 3. 全局AWS配置回退
+    if cfg.Region == "" {
+        cfg.Region = viper.GetString("aws.region")
+    }
+    if cfg.AccessKey == "" {
+        cfg.AccessKey = viper.GetString("aws.access_key")
+    }
+    if cfg.SecretKey == "" {
+        cfg.SecretKey = viper.GetString("aws.secret_key")
+    }
+    cfg.UseIMDS = viper.GetBool("aws.use_imds")
+
+    return cfg, nil
+}
+```
+
+### Lazy Load + sync.Once 初始化模式
+
+所有模块使用统一的懒加载模式：
+
+```go
+package mymodule
+
+import (
+    "fmt"
+    "sync"
+    "github.com/spf13/viper"
+)
+
+var (
+    globalConfig *Config       // 全局配置
+    globalClient *Client       // 全局客户端
+    clientOnce   sync.Once     // 确保只初始化一次
+    initErr      error         // 初始化错误
+    configMux    sync.RWMutex  // 配置读写锁
+)
+
+// Config represents module configuration
+type Config struct {
+    Field1 string `yaml:"field1"`
+    Field2 string `yaml:"field2"`
+}
+
+// loadConfigFromViper loads configuration from viper
+// Configuration path priority (cascading fallback):
+// 1. service.subservice.field - Service-specific config
+// 2. service.field - Global service config (if applicable)
+func loadConfigFromViper() (*Config, error) {
+    cfg := &Config{}
+
+    // Load service-specific config
+    cfg.Field1 = viper.GetString("service.subservice.field1")
+    cfg.Field2 = viper.GetString("service.subservice.field2")
+
+    // Fall back to global config for missing values
+    if cfg.Field1 == "" {
+        cfg.Field1 = viper.GetString("service.field1")
+    }
+
+    // Validate required fields
+    if cfg.Field1 == "" {
+        return nil, fmt.Errorf("service.subservice.field1 is required")
+    }
+
+    return cfg, nil
+}
+
+// initialize performs the actual initialization
+// Called once via sync.Once
+func initialize() {
+    // Try to load from viper first
+    cfg, err := loadConfigFromViper()
+    if err != nil {
+        // Fall back to SetConfig if viper config not available
+        configMux.RLock()
+        cfg = globalConfig
+        configMux.RUnlock()
+
+        if cfg == nil {
+            initErr = fmt.Errorf("config not available: %v", err)
+            return
+        }
+    } else {
+        // Store loaded config
+        configMux.Lock()
+        globalConfig = cfg
+        configMux.Unlock()
+    }
+
+    // Initialize client with config
+    globalClient, initErr = createClient(cfg)
+}
+
+// Get returns the client with lazy initialization
+func Get() *Client {
+    clientOnce.Do(initialize)
+    return globalClient
+}
+
+// GetError returns the initialization error if any
+func GetError() error {
+    return initErr
+}
+
+// SetConfig sets the configuration for lazy loading (deprecated)
+// Use viper configuration instead
+func SetConfig(cfg *Config) {
+    configMux.Lock()
+    defer configMux.Unlock()
+    globalConfig = cfg
+}
+```
+
+### 使用方式 - 外部透明
+
+#### 应用启动时
+
+只需一次性加载配置文件：
+
+```go
+package main
+
+import (
+    "github.com/spf13/viper"
+    "github.com/wordgate/qtoolkit/aws/s3"
+    "github.com/wordgate/qtoolkit/aws/sqs"
+    "github.com/wordgate/qtoolkit/db"
+)
+
+func main() {
+    // 1. 加载配置文件（全局，一次性）
+    viper.SetConfigFile("config.yml")
+    if err := viper.ReadInConfig(); err != nil {
+        panic(err)
+    }
+
+    // 2. 直接使用各模块，配置自动加载
+    // 无需调用 SetConfig()
+
+    // 使用S3
+    s3.Upload("file.jpg", data)
+
+    // 使用SQS（按队列名自动加载对应配置）
+    sqs.Get("notifications")
+
+    // 使用数据库
+    db.Get().Create(&user)
+}
+```
+
+#### 不再需要的旧方式
+
+```go
+// ❌ 旧方式：需要手动配置每个模块
+s3.SetConfig(&s3.Config{
+    AccessKey: "...",
+    SecretKey: "...",
+    Bucket: "...",
+})
+
+// ✅ 新方式：配置文件 + 自动加载
+// 无需任何 SetConfig() 调用
+```
+
+### 配置路径规范表
+
+| 模块 | 配置路径 | 回退层级 | 示例字段 |
+|------|---------|---------|---------|
+| **Database** | `database.*` | 1级 | `database.dsn`, `database.debug` |
+| **AWS S3** | `aws.s3.*` → `aws.*` | 2级 | `aws.s3.bucket`, `aws.s3.region` → `aws.region` |
+| **AWS SES** | `aws.ses.*` → `aws.*` | 2级 | `aws.ses.default_from`, `aws.ses.region` → `aws.region` |
+| **AWS SQS** | `aws.sqs.queues.<name>.*` → `aws.sqs.*` → `aws.*` | 3级 | `aws.sqs.queues.my-queue.region` → `aws.sqs.region` → `aws.region` |
+| **AWS EC2** | `aws.ec2.*` → `aws.*` | 2级 | `aws.ec2.region` → `aws.region` |
+| **Redis** | `redis.*` | 1级 | `redis.addr`, `redis.password`, `redis.db` |
+| **Slack** | `slack.*` | 1级 | `slack.webhook_url`, `slack.token` |
+| **Aliyun** | `aliyun.*` | 1级 | `aliyun.access_key`, `aliyun.region` |
+| **GoDaddy** | `godaddy.*` | 1级 | `godaddy.api_key`, `godaddy.api_secret` |
+| **Mail** | `mail.*` | 1级 | `mail.smtp_host`, `mail.smtp_port` |
+| **Core** | `exchange_rate.*` | 1级 | `exchange_rate.api_key` |
+| **DeepL** | `deepl.*` | 1级 | `deepl.api_key`, `deepl.api_url` |
+| **Log** | `log.*` | 1级 | `log.level`, `log.format` |
+| **Unred** | `unred.*` | 1级 | `unred.api_url`, `unred.api_key` |
+
+### 配置模板文件
+
+每个模块提供 `<module>_config.yml` 模板文件，包含：
+
+1. **配置路径注释**: 说明嵌套结构
+2. **字段说明**: 每个配置项的用途
+3. **示例值**: 使用占位符（如 `YOUR_*_KEY`）
+4. **安全提示**: 不提交真实凭证的警告
+
+**示例** (db/db_config.yml):
+```yaml
+# Database Configuration Template
+# Add this to your main config.yml file
+
+database:
+  # MySQL DSN (Data Source Name) connection string
+  # Format: username:password@tcp(host:port)/database?charset=utf8mb4&parseTime=True&loc=Local
+  dsn: "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+
+  # Enable debug mode (prints SQL queries)
+  debug: false
+
+# Security Notes:
+# - Never commit real credentials to version control
+# - Use environment variables for production
+# - Rotate database passwords regularly
+```
+
+### 必需字段验证
+
+每个 `loadConfigFromViper()` 必须验证必需字段：
+
+```go
+// Validate required fields
+if cfg.RequiredField == "" {
+    return nil, fmt.Errorf("service.subservice.required_field is required")
+}
+
+// 错误信息包含完整配置路径
+if cfg.Bucket == "" {
+    return nil, fmt.Errorf("aws.s3.bucket is required")
+}
+```
+
+### 向后兼容性
+
+所有模块保留 `SetConfig()` 函数作为废弃接口：
+
+```go
+// SetConfig sets the configuration for lazy loading (deprecated)
+// Prefer using viper configuration instead
+func SetConfig(cfg *Config) {
+    configMux.Lock()
+    defer configMux.Unlock()
+    globalConfig = cfg
+}
+```
+
+**使用场景**:
+- 测试代码需要动态配置
+- 不使用viper的遗留代码
+- 配置文件不可用时的备用方案
+
 ## ⏱️ v1.0 迁移时间表
 
 ### 📅 并行开发阶段
@@ -232,9 +681,19 @@ aws:
 
 ### 🎯 迁移里程碑
 1. **Phase 1**: 核心模块（core/util/log）- ✅ 已完成
-2. **Phase 2**: 服务模块（aws/aliyun/slack）- 🚧 进行中
-3. **Phase 3**: 集成模块（database/email/redis）- 📅 计划中
-4. **Phase 4**: 完全切换，废弃v0.x - 📅 待定
+2. **Phase 2**: 服务模块（aws/aliyun/slack/godaddy）- ✅ 已完成
+3. **Phase 3**: 集成模块（database/redis/mail/deepl/appstore/unred）- ✅ 已完成
+4. **Phase 4**: 统一配置自动加载系统 - ✅ 已完成
+5. **Phase 5**: 文档完善和v1.0正式发布 - ✅ 已完成
+
+**v1.0 迁移完成状态**:
+- ✅ 16个独立模块全部完成
+- ✅ 统一配置自动加载架构实施
+- ✅ 级联配置回退系统完成
+- ✅ 懒加载 + sync.Once 初始化模式应用到所有模块
+- ✅ 配置模板文件和文档完成
+- ✅ go.work工作区配置完成
+- ✅ 所有模块编译通过
 
 ### 📊 功能覆盖检查
 定期检查v1.0功能覆盖度：

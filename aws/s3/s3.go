@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 // Config represents S3 configuration
@@ -35,7 +36,48 @@ var (
 	configMux    sync.RWMutex
 )
 
-// SetConfig sets the S3 configuration for lazy loading
+// loadConfigFromViper loads S3 configuration from viper
+// Configuration path priority (cascading fallback):
+// 1. aws.s3 - S3 service config
+// 2. aws - Global AWS config
+func loadConfigFromViper() (*Config, error) {
+	cfg := &Config{}
+
+	// Load S3-specific config
+	cfg.Region = viper.GetString("aws.s3.region")
+	cfg.AccessKey = viper.GetString("aws.s3.access_key")
+	cfg.SecretKey = viper.GetString("aws.s3.secret_key")
+	cfg.UseIMDS = viper.GetBool("aws.s3.use_imds")
+	cfg.Bucket = viper.GetString("aws.s3.bucket")
+	cfg.URLPrefix = viper.GetString("aws.s3.url_prefix")
+
+	// Fall back to global AWS config for missing credentials/region
+	if cfg.Region == "" {
+		cfg.Region = viper.GetString("aws.region")
+	}
+	if cfg.AccessKey == "" {
+		cfg.AccessKey = viper.GetString("aws.access_key")
+	}
+	if cfg.SecretKey == "" {
+		cfg.SecretKey = viper.GetString("aws.secret_key")
+	}
+	if !viper.IsSet("aws.s3.use_imds") && viper.IsSet("aws.use_imds") {
+		cfg.UseIMDS = viper.GetBool("aws.use_imds")
+	}
+
+	// Validate required fields
+	if cfg.Region == "" {
+		return nil, fmt.Errorf("s3 region not configured (check aws.region or aws.s3.region)")
+	}
+	if cfg.Bucket == "" {
+		return nil, fmt.Errorf("s3 bucket not configured (check aws.s3.bucket)")
+	}
+
+	return cfg, nil
+}
+
+// SetConfig sets the S3 configuration for lazy loading (deprecated)
+// Use viper configuration instead
 func SetConfig(cfg *Config) {
 	configMux.Lock()
 	defer configMux.Unlock()
@@ -51,13 +93,23 @@ func GetConfig() *Config {
 
 // initialize performs the actual S3 client initialization
 func initialize() {
-	configMux.RLock()
-	cfg := globalConfig
-	configMux.RUnlock()
+	// Try to load from viper first
+	cfg, err := loadConfigFromViper()
+	if err != nil {
+		// Fall back to SetConfig if viper config not available
+		configMux.RLock()
+		cfg = globalConfig
+		configMux.RUnlock()
 
-	if cfg == nil {
-		initErr = fmt.Errorf("S3 config not set, call SetConfig() first")
-		return
+		if cfg == nil {
+			initErr = fmt.Errorf("S3 config not available: %v", err)
+			return
+		}
+	} else {
+		// Store loaded config
+		configMux.Lock()
+		globalConfig = cfg
+		configMux.Unlock()
 	}
 
 	if cfg.Region == "" {
@@ -69,7 +121,6 @@ func initialize() {
 
 	// If UseIMDS is explicitly set to false, use static credentials
 	var awsCfg awsv2.Config
-	var err error
 
 	if !cfg.UseIMDS {
 		if cfg.AccessKey != "" && cfg.SecretKey != "" {

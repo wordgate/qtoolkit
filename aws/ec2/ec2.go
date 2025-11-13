@@ -3,6 +3,7 @@ package ec2
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/spf13/viper"
 )
 
 // Config represents EC2 configuration
@@ -18,6 +20,109 @@ type Config struct {
 	SecretKey string `yaml:"secret_key" json:"secret_key"`
 	UseIMDS   bool   `yaml:"use_imds" json:"use_imds"`
 	Region    string `yaml:"region" json:"region"`
+}
+
+var (
+	globalConfig *Config
+	globalClient *ec2.Client
+	clientOnce   sync.Once
+	initErr      error
+	configMux    sync.RWMutex
+)
+
+// loadConfigFromViper loads EC2 configuration from viper
+// Configuration path priority (cascading fallback):
+// 1. aws.ec2 - EC2 service config
+// 2. aws - Global AWS config
+func loadConfigFromViper() (*Config, error) {
+	cfg := &Config{}
+
+	// Load EC2-specific config
+	cfg.Region = viper.GetString("aws.ec2.region")
+	cfg.AccessKey = viper.GetString("aws.ec2.access_key")
+	cfg.SecretKey = viper.GetString("aws.ec2.secret_key")
+	cfg.UseIMDS = viper.GetBool("aws.ec2.use_imds")
+
+	// Fall back to global AWS config for missing credentials/region
+	if cfg.Region == "" {
+		cfg.Region = viper.GetString("aws.region")
+	}
+	if cfg.AccessKey == "" {
+		cfg.AccessKey = viper.GetString("aws.access_key")
+	}
+	if cfg.SecretKey == "" {
+		cfg.SecretKey = viper.GetString("aws.secret_key")
+	}
+	if !viper.IsSet("aws.ec2.use_imds") && viper.IsSet("aws.use_imds") {
+		cfg.UseIMDS = viper.GetBool("aws.use_imds")
+	}
+
+	// Validate required fields
+	if cfg.Region == "" {
+		return nil, fmt.Errorf("ec2 region not configured (check aws.region or aws.ec2.region)")
+	}
+
+	return cfg, nil
+}
+
+// SetConfig sets the EC2 configuration for lazy loading (deprecated)
+// Use viper configuration instead
+func SetConfig(cfg *Config) {
+	configMux.Lock()
+	defer configMux.Unlock()
+	globalConfig = cfg
+}
+
+// GetConfig returns the current EC2 configuration
+func GetConfig() *Config {
+	configMux.RLock()
+	defer configMux.RUnlock()
+	return globalConfig
+}
+
+// initialize performs the actual EC2 client initialization
+func initialize() {
+	// Try to load from viper first
+	cfg, err := loadConfigFromViper()
+	if err != nil {
+		// Fall back to SetConfig if viper config not available
+		configMux.RLock()
+		cfg = globalConfig
+		configMux.RUnlock()
+
+		if cfg == nil {
+			initErr = fmt.Errorf("EC2 config not available: %v", err)
+			return
+		}
+	} else {
+		// Store loaded config
+		configMux.Lock()
+		globalConfig = cfg
+		configMux.Unlock()
+	}
+
+	if cfg.Region == "" {
+		initErr = fmt.Errorf("EC2 region is required")
+		return
+	}
+
+	awsCfg, err := loadConfig(cfg.Region, cfg)
+	if err != nil {
+		initErr = fmt.Errorf("failed to load AWS config: %v", err)
+		return
+	}
+
+	globalClient = ec2.NewFromConfig(awsCfg)
+	initErr = nil
+}
+
+// getClient returns the EC2 client with lazy initialization
+func getClient() (*ec2.Client, error) {
+	clientOnce.Do(initialize)
+	if initErr != nil {
+		return nil, initErr
+	}
+	return globalClient, nil
 }
 
 // InstanceType represents EC2 instance type

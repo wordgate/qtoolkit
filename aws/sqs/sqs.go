@@ -13,6 +13,7 @@ import (
 	awscredentials "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/spf13/viper"
 )
 
 var sqsClients map[string]*Client = make(map[string]*Client)
@@ -83,16 +84,69 @@ func loadConfig(region string, cfg *Config) (awsv2.Config, error) {
 	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
-// initSqs initializes SQS client for a specific queue
-// The name parameter can refer to a configuration key or be used as the queue name directly
-func initSqs(name string, cfg *Config) (*Client, error) {
-	if cfg == nil || cfg.Region == "" {
-		return nil, fmt.Errorf("no sqs config for queue: %s", name)
+// loadConfigFromViper loads SQS configuration from viper for a specific queue
+// Configuration path priority (cascading fallback):
+// 1. aws.sqs.queues.<queueName> - Queue-specific config
+// 2. aws.sqs - SQS service config
+// 3. aws - Global AWS config
+func loadConfigFromViper(queueName string) (*Config, error) {
+	cfg := &Config{
+		QueueName: queueName,
 	}
 
-	queueName := cfg.QueueName
-	if queueName == "" {
-		queueName = name
+	// Try queue-specific config first
+	queueConfigPath := fmt.Sprintf("aws.sqs.queues.%s", queueName)
+	if viper.IsSet(queueConfigPath) {
+		// Queue-specific config exists
+		cfg.Region = viper.GetString(queueConfigPath + ".region")
+		cfg.AccessKey = viper.GetString(queueConfigPath + ".access_key")
+		cfg.SecretKey = viper.GetString(queueConfigPath + ".secret_key")
+		cfg.UseIMDS = viper.GetBool(queueConfigPath + ".use_imds")
+	}
+
+	// Fall back to SQS service config for missing values
+	if cfg.Region == "" {
+		cfg.Region = viper.GetString("aws.sqs.region")
+	}
+	if cfg.AccessKey == "" {
+		cfg.AccessKey = viper.GetString("aws.sqs.access_key")
+	}
+	if cfg.SecretKey == "" {
+		cfg.SecretKey = viper.GetString("aws.sqs.secret_key")
+	}
+	if !viper.IsSet(queueConfigPath+".use_imds") && viper.IsSet("aws.sqs.use_imds") {
+		cfg.UseIMDS = viper.GetBool("aws.sqs.use_imds")
+	}
+
+	// Fall back to global AWS config for missing values
+	if cfg.Region == "" {
+		cfg.Region = viper.GetString("aws.region")
+	}
+	if cfg.AccessKey == "" {
+		cfg.AccessKey = viper.GetString("aws.access_key")
+	}
+	if cfg.SecretKey == "" {
+		cfg.SecretKey = viper.GetString("aws.secret_key")
+	}
+	if !viper.IsSet(queueConfigPath+".use_imds") && !viper.IsSet("aws.sqs.use_imds") && viper.IsSet("aws.use_imds") {
+		cfg.UseIMDS = viper.GetBool("aws.use_imds")
+	}
+
+	// Validate required fields
+	if cfg.Region == "" {
+		return nil, fmt.Errorf("sqs region not configured for queue: %s (check aws.region, aws.sqs.region, or aws.sqs.queues.%s.region)", queueName, queueName)
+	}
+
+	return cfg, nil
+}
+
+// initSqs initializes SQS client for a specific queue
+// The queueName parameter is used as the queue name and config lookup key
+func initSqs(queueName string) (*Client, error) {
+	// Load config from viper
+	cfg, err := loadConfigFromViper(queueName)
+	if err != nil {
+		return nil, err
 	}
 
 	awsCfg, err := loadConfig(cfg.Region, cfg)
@@ -123,21 +177,23 @@ func initSqs(name string, cfg *Config) (*Client, error) {
 }
 
 // Get returns SQS client for specified queue
-func Get(name string, cfg *Config) (*Client, error) {
+// Config is automatically loaded from viper configuration file
+// Configuration should be under aws.sqs.queues.<queueName> or aws.sqs (global)
+func Get(queueName string) (*Client, error) {
 	sqsMux.RLock()
-	client, ok := sqsClients[name]
+	client, ok := sqsClients[queueName]
 	sqsMux.RUnlock()
 
 	if !ok {
 		sqsMux.Lock()
 		defer sqsMux.Unlock()
-		if client, ok = sqsClients[name]; !ok {
+		if client, ok = sqsClients[queueName]; !ok {
 			var err error
-			client, err = initSqs(name, cfg)
+			client, err = initSqs(queueName)
 			if err != nil {
 				return nil, err
 			}
-			sqsClients[name] = client
+			sqsClients[queueName] = client
 		}
 	}
 	return client, nil

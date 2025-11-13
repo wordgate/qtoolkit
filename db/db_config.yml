@@ -1,0 +1,28 @@
+# Database Configuration Template
+# Add this to your main config.yml file
+
+database:
+  # MySQL DSN (Data Source Name) connection string
+  # Format: username:password@tcp(host:port)/database?charset=utf8mb4&parseTime=True&loc=Local
+  dsn: "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+  
+  # Enable debug mode (prints SQL queries)
+  debug: false
+
+# Security Notes:
+# - Never commit real credentials to version control
+# - Use environment variables for production
+# - Rotate database passwords regularly
+# - Use least-privilege database users
+
+# Example configurations:
+#
+# Development:
+# database:
+#   dsn: "root:password@tcp(localhost:3306)/dev_db?charset=utf8mb4&parseTime=True&loc=Local"
+#   debug: true
+#
+# Production:
+# database:
+#   dsn: "app_user:secure_password@tcp(db.example.com:3306)/prod_db?charset=utf8mb4&parseTime=True&loc=Local"
+#   debug: false

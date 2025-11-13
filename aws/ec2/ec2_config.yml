@@ -1,14 +1,29 @@
-# EC2 Configuration Example
-# Copy this file and replace with your actual values
+# AWS EC2 Configuration Template
+# Add this to your main config.yml file
 
-# AWS Credentials (optional if using EC2 IAM role)
-access_key: "YOUR_AWS_ACCESS_KEY"
-secret_key: "YOUR_AWS_SECRET_KEY"
+aws:
+  ec2:
+    # AWS Credentials
+    access_key: "YOUR_AWS_ACCESS_KEY"
+    secret_key: "YOUR_AWS_SECRET_KEY"
 
-# Use EC2 Instance Metadata Service (IMDS) for credentials
-# Set to true when running on EC2 with IAM role
-# Set to false to use static credentials (access_key/secret_key)
-use_imds: true
+    # Use EC2 Instance Metadata Service (IMDS) for credentials
+    # Set to true when running on EC2 with IAM role
+    # Set to false to use static credentials (access_key/secret_key)
+    use_imds: false
 
-# EC2 Region
-region: "us-east-1"
+    # EC2 Region
+    region: "us-east-1"
+
+# Security Notes:
+# - Never commit real credentials to version control
+# - Use environment variables for production:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# - Use IAM roles when running on EC2 (set use_imds: true, no credentials needed!)
+# - Rotate credentials regularly
+# - Use least-privilege IAM policies
+
+# EC2 Usage Notes:
+# - Make sure to configure VPC and security groups appropriately
+# - Consider using launch templates for consistent instance configuration
+# - Always tag instances for better organization and cost tracking

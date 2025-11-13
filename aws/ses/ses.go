@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/spf13/viper"
 )
 
 // Config represents SES configuration
@@ -48,7 +49,44 @@ var (
 	configMux    sync.RWMutex
 )
 
-// SetConfig sets the SES configuration for lazy loading
+// loadConfigFromViper loads SES configuration from viper
+// Configuration path priority (cascading fallback):
+// 1. aws.ses - SES service config
+// 2. aws - Global AWS config
+func loadConfigFromViper() (*Config, error) {
+	cfg := &Config{}
+
+	// Load SES-specific config
+	cfg.Region = viper.GetString("aws.ses.region")
+	cfg.AccessKey = viper.GetString("aws.ses.access_key")
+	cfg.SecretKey = viper.GetString("aws.ses.secret_key")
+	cfg.UseIMDS = viper.GetBool("aws.ses.use_imds")
+	cfg.DefaultFrom = viper.GetString("aws.ses.default_from")
+
+	// Fall back to global AWS config for missing credentials/region
+	if cfg.Region == "" {
+		cfg.Region = viper.GetString("aws.region")
+	}
+	if cfg.AccessKey == "" {
+		cfg.AccessKey = viper.GetString("aws.access_key")
+	}
+	if cfg.SecretKey == "" {
+		cfg.SecretKey = viper.GetString("aws.secret_key")
+	}
+	if !viper.IsSet("aws.ses.use_imds") && viper.IsSet("aws.use_imds") {
+		cfg.UseIMDS = viper.GetBool("aws.use_imds")
+	}
+
+	// Validate: default to us-east-1 if no region configured
+	if cfg.Region == "" {
+		cfg.Region = "us-east-1"
+	}
+
+	return cfg, nil
+}
+
+// SetConfig sets the SES configuration for lazy loading (deprecated)
+// Use viper configuration instead
 func SetConfig(cfg *Config) {
 	configMux.Lock()
 	defer configMux.Unlock()
@@ -64,13 +102,23 @@ func GetConfig() *Config {
 
 // initialize performs the actual SES client initialization
 func initialize() {
-	configMux.RLock()
-	cfg := globalConfig
-	configMux.RUnlock()
+	// Try to load from viper first
+	cfg, err := loadConfigFromViper()
+	if err != nil {
+		// Fall back to SetConfig if viper config not available
+		configMux.RLock()
+		cfg = globalConfig
+		configMux.RUnlock()
 
-	if cfg == nil {
-		initErr = fmt.Errorf("SES config not set, call SetConfig() first")
-		return
+		if cfg == nil {
+			initErr = fmt.Errorf("SES config not available: %v", err)
+			return
+		}
+	} else {
+		// Store loaded config
+		configMux.Lock()
+		globalConfig = cfg
+		configMux.Unlock()
 	}
 
 	// Default SES region
@@ -81,7 +129,6 @@ func initialize() {
 
 	ctx := context.Background()
 	var awsCfg awsv2.Config
-	var err error
 
 	// If UseIMDS is explicitly set to false, use static credentials
 	if !cfg.UseIMDS {

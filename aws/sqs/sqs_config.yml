@@ -1,17 +1,35 @@
-# SQS Configuration Example
-# Copy this file and replace with your actual values
+# AWS SQS Configuration Template
+# Add this to your main config.yml file
 
-# AWS Credentials (optional if using EC2 IAM role)
-access_key: "YOUR_AWS_ACCESS_KEY"
-secret_key: "YOUR_AWS_SECRET_KEY"
+aws:
+  sqs:
+    # Global AWS credentials (used if queue doesn't specify its own)
+    access_key: "YOUR_AWS_ACCESS_KEY"
+    secret_key: "YOUR_AWS_SECRET_KEY"
 
-# Use EC2 Instance Metadata Service (IMDS) for credentials
-# Set to true when running on EC2 with IAM role
-# Set to false to use static credentials (access_key/secret_key)
-use_imds: true
+    # Use EC2 Instance Metadata Service (IMDS) for credentials
+    # Set to true when running on EC2 with IAM role
+    # Set to false to use static credentials (access_key/secret_key)
+    use_imds: true
 
-# SQS Region
-region: "us-east-1"
+    # Default region for all queues
+    region: "us-east-1"
 
-# Queue name (optional, can be set per client)
-queue_name: "my-queue"
+    # Per-queue configuration (optional)
+    # Each queue can override global settings
+    queues:
+      my-queue:
+        region: "us-east-1"
+        # access_key: "QUEUE_SPECIFIC_KEY"  # Optional: override global credentials
+        # secret_key: "QUEUE_SPECIFIC_SECRET"
+        # use_imds: false
+
+      another-queue:
+        region: "us-west-2"
+
+# Security Note:
+# - Never commit real credentials to version control
+# - Use environment variables for production:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# - Use IAM roles when running on EC2 (no credentials needed!)
+# - Rotate credentials regularly

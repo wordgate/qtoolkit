@@ -1,28 +1,85 @@
 # AWS Configuration Template
 # Replace placeholder values with your actual credentials
+# Add this to your main config.yml file
 
 aws:
+  # Global AWS credentials (used by all services unless overridden)
   access_key: "YOUR_AWS_ACCESS_KEY"
   secret_key: "YOUR_AWS_SECRET_KEY"
   region: "us-west-2"
 
+  # Use EC2 Instance Metadata Service (IMDS) for credentials
+  # Set to true when running on EC2 with IAM role
+  # Set to false to use static credentials (access_key/secret_key)
+  use_imds: false
+
+  # S3 Configuration
   s3:
     bucket: "your-s3-bucket-name"
-    region: "us-west-2"
     url_prefix: "https://your-s3-bucket-name.s3.us-west-2.amazonaws.com"
+    # region: "us-west-2"  # Optional: override global region
+    # access_key: "S3_SPECIFIC_KEY"  # Optional: override global credentials
+    # secret_key: "S3_SPECIFIC_SECRET"
 
+  # SES (Simple Email Service) Configuration
   ses:
-    region: "us-east-1"  # SES region (optional, uses global region if not set)
-    default_from: "noreply@yourdomain.com"  # Default sender email (optional)
+    default_from: "noreply@yourdomain.com"
+    # region: "us-east-1"  # Optional: override global region (SES commonly uses us-east-1)
+    # access_key: "SES_SPECIFIC_KEY"  # Optional: override global credentials
+    # secret_key: "SES_SPECIFIC_SECRET"
 
-# Security Note:
+  # SQS (Simple Queue Service) Configuration
+  sqs:
+    # region: "us-west-2"  # Optional: override global region
+    # access_key: "SQS_SPECIFIC_KEY"  # Optional: override global credentials
+    # secret_key: "SQS_SPECIFIC_SECRET"
+
+    # Per-queue configuration (optional)
+    queues:
+      notifications:
+        region: "us-east-1"
+
+      background-jobs:
+        region: "us-west-2"
+
+  # EC2 Configuration
+  ec2:
+    # region: "us-west-2"  # Optional: override global region
+    # access_key: "EC2_SPECIFIC_KEY"  # Optional: override global credentials
+    # secret_key: "EC2_SPECIFIC_SECRET"
+
+# Configuration Priority:
+# Each service follows this fallback chain:
+# 1. Service-specific config (e.g., aws.s3.region)
+# 2. Global AWS config (e.g., aws.region)
+#
+# For SQS queues:
+# 1. Queue-specific config (e.g., aws.sqs.queues.notifications.region)
+# 2. SQS service config (e.g., aws.sqs.region)
+# 3. Global AWS config (e.g., aws.region)
+
+# Security Notes:
 # - Never commit real credentials to version control
 # - Use environment variables for production:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-# - Use IAM roles when running on EC2 (no credentials needed!)
+# - Use IAM roles when running on EC2 (set use_imds: true, no credentials needed!)
 # - Rotate credentials regularly
+# - Use least-privilege IAM policies
+
+# Service-Specific Notes:
 #
-# SES Note:
+# SES:
 # - Sender email must be verified in AWS SES console
 # - In sandbox mode, recipient emails must also be verified
 # - Request production access to send to any email address
+# - SES is commonly available in us-east-1
+#
+# S3:
+# - Bucket must exist before using
+# - Configure appropriate bucket policies and CORS settings
+# - url_prefix can be CloudFront CDN or custom domain
+#
+# SQS:
+# - Queues are created automatically if they don't exist
+# - Configure separate queues for different task types
+# - Each queue can use different regions for latency optimization
