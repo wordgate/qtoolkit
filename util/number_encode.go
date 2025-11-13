@@ -1,4 +1,4 @@
-package core
+package util
 
 /*
 邀请码容量对照表（约等于最大可编码ID+1）
@@ -81,9 +81,9 @@ func (g *NumEncoder) Encode(id uint64) (string, error) {
 
 	// 扩散
 	for i := 0; i < g.length; i++ {
-		idx[i] = uint16(id % g.base) // 使用实例的 base
+		idx[i] = uint16(id % g.base)                          // 使用实例的 base
 		idx[i] = (idx[i] + uint16(i)*idx[0]) % uint16(g.base) // 使用实例的 base
-		id /= g.base // 使用实例的 base
+		id /= g.base                                          // 使用实例的 base
 	}
 
 	// 混淆
@@ -109,7 +109,7 @@ func (g *NumEncoder) Decode(code string) uint64 {
 
 	var id uint64
 	for i := g.length - 1; i >= 0; i-- {
-		id *= g.base // 使用实例的 base
+		id *= g.base                                                           // 使用实例的 base
 		idx[i] = (idx[i] + g.decodeFactor - idx[0]*uint16(i)) % uint16(g.base) // 使用实例的 base
 		id += uint64(idx[i])
 	}
