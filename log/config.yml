@@ -1,17 +1,8 @@
+# Log Configuration Template
+
+is_dev: true
+
 log:
-  level: debug
-  path: /var/log
-  watchlog:
-    enabled: false                 # 主开关：是否启用CloudWatch Logs
-aws:
-  access_key: YOUR_AWS_ACCESS_KEY
-  secret: YOUR_AWS_SECRET_KEY
-  region: "YOUR_REGION"
-  cloudwatch:
-    region: "YOUR_REGION"
-    log_group: "YOUR_LOG_GROUP"
-    log_stream_prefix: "app-logs-"
-    retention_days: 30
-    async: true
-    buffer_size: 100
-    flush_interval: 5
+  level: debug                     # trace, debug, info, warn, error, fatal, panic
+  path: /var/log/app.log           # Log file path (empty = stdout)
+  cloudwatch: false                # Enable CloudWatch Logs (requires aws.cloudwatch.* config)
