@@ -1,0 +1,15 @@
+# CloudWatch Logs Configuration Template
+
+aws:
+  access_key: YOUR_AWS_ACCESS_KEY
+  secret: YOUR_AWS_SECRET_KEY
+  region: us-west-2
+
+  cloudwatch:
+    # region: us-west-2           # Optional: defaults to aws.region
+    log_group: my-app-logs        # Required: CloudWatch log group name
+    log_stream: my-app            # Required: CloudWatch log stream name
+    retention_days: 30            # Log retention in days (0 = forever)
+    buffer_size: 100              # Buffer size before flush
+    flush_interval: 5             # Flush interval in seconds
+    async: true                   # Async log sending

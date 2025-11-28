@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	./aliyun
 	./appstore
+	./aws/cloudwatch
 	./aws/ec2
 	./aws/s3
 	./aws/ses
