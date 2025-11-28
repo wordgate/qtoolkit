@@ -2,10 +2,6 @@ package util
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-
-	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -28,8 +24,5 @@ func SetConfigFile(file string) {
 	if !IsDev() {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	topic := filepath.Base(os.Args[0])
-	log.InitLogger(topic)
-	// DB is now lazy loaded - no need to init here
-	// Call db.SetConfig() if you need to configure database
+	// Log and DB are now lazy loaded - no need to init here
 }
