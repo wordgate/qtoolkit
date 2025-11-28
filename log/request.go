@@ -14,8 +14,7 @@ import (
 func MiddlewareRequestLog(logResponseContent bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 设置请求ID
-		reqId := RequestId(c)
-		ctx := CtxWithRequestId(c, reqId)
+		RequestId(c)
 
 		// 如果需要记录响应内容，创建自定义的响应写入器
 		var blw *bodyLogWriter
@@ -68,8 +67,8 @@ func MiddlewareRequestLog(logResponseContent bool) gin.HandlerFunc {
 			req["body"] = reqBody
 		}
 
-		// 创建日志条目
-		logger := WithFields(ctx, logrus.Fields{
+		// 创建日志条目（使用 gin.Context 以正确获取 reqId）
+		logger := WithFields(c, logrus.Fields{
 			"request": req,
 		})
 
