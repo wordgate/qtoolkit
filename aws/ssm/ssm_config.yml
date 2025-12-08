@@ -1,0 +1,55 @@
+# AWS SSM Parameter Store Configuration Template
+# Add this to your main config.yml file
+
+aws:
+  # Global AWS configuration (shared by all AWS services)
+  region: "ap-northeast-1"
+  access_key: "YOUR_AWS_ACCESS_KEY"
+  secret_key: "YOUR_AWS_SECRET_KEY"
+  use_imds: false  # Set to true to use IAM role on EC2
+
+  # SSM service-specific configuration (optional)
+  ssm:
+    # region: "us-east-1"  # Override global region for SSM only
+    # access_key/secret_key will fall back to global AWS config
+
+# Configuration Path Priority (Cascading Fallback):
+# 1. aws.ssm.region → aws.region
+# 2. aws.ssm.access_key → aws.access_key
+# 3. aws.ssm.secret_key → aws.secret_key
+# 4. aws.ssm.use_imds → aws.use_imds
+
+# Security Notes:
+# - NEVER commit real credentials to version control
+# - Use environment variables or AWS IAM roles in production
+# - Enable AWS CloudTrail for parameter access auditing
+# - Use SecureString type for sensitive parameters
+# - Rotate credentials regularly
+# - Apply least-privilege IAM policies:
+#   - ssm:GetParameter - Read parameters
+#   - ssm:GetParameters - Batch read parameters
+#   - ssm:PutParameter - Create/update parameters
+#   - ssm:DeleteParameter - Delete parameters
+#   - kms:Decrypt - Required for SecureString decryption
+
+# Example IAM Policy for SSM Access:
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "ssm:GetParameter",
+#         "ssm:GetParameters",
+#         "ssm:PutParameter",
+#         "ssm:DeleteParameter"
+#       ],
+#       "Resource": "arn:aws:ssm:*:*:parameter/your-app/*"
+#     },
+#     {
+#       "Effect": "Allow",
+#       "Action": "kms:Decrypt",
+#       "Resource": "arn:aws:kms:*:*:key/*"
+#     }
+#   ]
+# }
