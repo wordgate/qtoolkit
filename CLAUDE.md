@@ -20,6 +20,12 @@ qtoolkit v1.0 uses a **modular architecture** where each service is an independe
 - ✅ **兼容性维护**: 保持v0.x功能正常运行
 - ✅ **双重测试**: 确保v0.x和v1.0功能对等 
 
+## Go Version Requirement
+
+**强制要求: Go 1.24.0**
+
+所有模块的 `go.mod` 必须使用 `go 1.24.0`。
+
 ## Development Commands
 
 ### v1.0 Module Development
@@ -607,6 +613,134 @@ s3.SetConfig(&s3.Config{
 | **DeepL** | `deepl.*` | 1级 | `deepl.api_key`, `deepl.api_url` |
 | **Log** | `log.*` | 1级 | `log.level`, `log.format` |
 | **Unred** | `unred.*` | 1级 | `unred.api_url`, `unred.api_key` |
+| **Asynq** | `asynq.*` → `redis.*` | 2级 | `asynq.concurrency`, `asynq.queues` → `redis.addr` |
+
+## Asynq 异步任务模块
+
+### 概述
+
+`asynq` 模块基于 [hibiken/asynq](https://github.com/hibiken/asynq) 提供异步任务队列功能：
+- **零配置启动**: Worker 自动启动，无需显式调用
+- **优雅关闭**: 自动监听信号，确保任务不丢失
+- **定时任务**: 支持 Cron 表达式的周期性任务
+- **监控 UI**: 内置 Asynqmon Web 界面
+
+### 配置
+
+```yaml
+# config.yml
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+asynq:
+  concurrency: 10              # Worker 并发数 (默认: 10)
+  queues:                      # 队列优先级 (数字越大优先级越高)
+    critical: 6
+    default: 3
+    low: 1
+  strict_priority: false       # 严格优先级模式 (默认: false)
+  default_max_retry: 3         # 默认最大重试次数 (默认: 3)
+  default_timeout: "30m"       # 默认任务超时 (默认: 30m)
+```
+
+### API 使用
+
+```go
+import "github.com/wordgate/qtoolkit/asynq"
+
+// 1. 注册任务处理器
+asynq.Handle("email:send", func(ctx context.Context, payload []byte) error {
+    var data EmailPayload
+    asynq.Unmarshal(payload, &data)
+    // 处理逻辑...
+    return nil
+})
+
+// 2. 注册定时任务 (可选)
+asynq.Cron("@every 5m", "metrics:collect", nil)
+asynq.Cron("0 9 * * *", "report:daily", nil)
+
+// 3. 挂载监控 UI (自动启动 Worker)
+r := gin.Default()
+asynq.Mount(r, "/asynq")
+
+// 4. 入队任务
+asynq.Enqueue("email:send", payload)                    // 立即执行
+asynq.EnqueueIn("email:send", payload, 5*time.Minute)   // 延迟执行
+asynq.EnqueueAt("email:send", payload, scheduledTime)   // 定时执行
+asynq.EnqueueUnique("user:sync", payload, 1*time.Hour)  // 去重任务
+
+// 5. 带选项入队
+asynq.Enqueue("task", payload,
+    asynq.Queue("critical"),
+    asynq.MaxRetry(5),
+    asynq.Timeout(10*time.Minute),
+)
+```
+
+### 部署模式
+
+**模式1: API + Worker 混合 (推荐)**
+```go
+func main() {
+    viper.ReadInConfig()
+
+    asynq.Handle("email:send", handleEmailSend)
+    asynq.Cron("@daily", "report:daily", nil)
+
+    r := gin.Default()
+    asynq.Mount(r, "/asynq")  // 自动启动 Worker + Scheduler
+
+    r.POST("/send", func(c *gin.Context) {
+        asynq.Enqueue("email:send", payload)
+    })
+
+    r.Run(":8080")
+}
+```
+
+**模式2: 独立 Worker 进程**
+```go
+// worker/main.go
+func main() {
+    viper.ReadInConfig()
+
+    asynq.Handle("email:send", handleEmailSend)
+    asynq.Cron("@daily", "report:daily", nil)
+
+    asynq.Run()  // 阻塞运行
+}
+```
+
+### Cron 表达式
+
+| 表达式 | 说明 |
+|--------|------|
+| `*/5 * * * *` | 每5分钟 |
+| `0 * * * *` | 每小时 |
+| `0 9 * * *` | 每天9:00 |
+| `0 9 * * 1` | 每周一9:00 |
+| `@every 30m` | 每30分钟 |
+| `@hourly` | 每小时 |
+| `@daily` | 每天0:00 |
+
+### 生命周期
+
+```
+Handle() 注册 handler
+       ↓
+Cron() 注册定时任务 (可选)
+       ↓
+Mount() 或 Enqueue() 首次调用
+       ↓
+Worker + Scheduler 自动启动
+       ↓
+SIGINT/SIGTERM 信号
+       ↓
+优雅关闭 (等待任务完成)
+```
 
 ### 配置模板文件
 

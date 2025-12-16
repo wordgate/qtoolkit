@@ -1,0 +1,17 @@
+# Asynq Configuration Template
+# Add to your main config.yml
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+asynq:
+  concurrency: 10              # Worker concurrency (default: 10)
+  queues:                      # Queue priorities (higher = more priority)
+    critical: 6
+    default: 3
+    low: 1
+  strict_priority: false       # Strict priority mode (default: false)
+  default_max_retry: 3         # Default max retry (default: 3)
+  default_timeout: "30m"       # Default task timeout (default: 30m)
