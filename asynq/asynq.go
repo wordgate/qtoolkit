@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -111,6 +112,7 @@ type cronTask struct {
 
 // loadConfig loads configuration from viper with cascading fallback.
 // Priority: asynq.* -> redis.* (for connection settings)
+// FATAL: Crashes if redis.addr is not configured.
 func loadConfig() *Config {
 	configOnce.Do(func() {
 		globalConfig = &Config{
@@ -134,6 +136,11 @@ func loadConfig() *Config {
 		}
 		if globalConfig.RedisDB == 0 && viper.IsSet("redis.db") {
 			globalConfig.RedisDB = viper.GetInt("redis.db")
+		}
+
+		// FATAL: Redis address is required
+		if globalConfig.RedisAddr == "" {
+			log.Fatal("asynq: redis.addr is required but not configured")
 		}
 
 		// Ensure defaults
