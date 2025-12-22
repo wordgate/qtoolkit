@@ -39,6 +39,8 @@ func Mount(r gin.IRouter, path string) {
 		ReadOnly:     cfg.Monitor.ReadOnly,
 	})
 
+	// Register both exact path and wildcard to handle trailing slash redirects
+	r.Any(path, gin.WrapH(h))
 	r.Any(path+"/*any", gin.WrapH(h))
 }
 
