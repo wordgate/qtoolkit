@@ -1,4 +1,4 @@
-module github.com/wordgate/qtoolkit/asynq
+module github.com/wordgate/qtoolkit/asynq/v2
 
 go 1.24.0
 
