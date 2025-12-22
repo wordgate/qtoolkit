@@ -19,7 +19,7 @@ import (
 
     "github.com/gin-gonic/gin"
     "github.com/spf13/viper"
-    "github.com/wordgate/qtoolkit/asynq/v2"
+    "github.com/wordgate/qtoolkit/asynq"
 )
 
 func main() {
