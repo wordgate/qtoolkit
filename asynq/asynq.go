@@ -422,3 +422,14 @@ func marshal(payload any) ([]byte, error) {
 func Unmarshal(payload []byte, v any) error {
 	return json.Unmarshal(payload, v)
 }
+
+// GetTaskID extracts a task ID from a context, if any.
+// The ID of a task is guaranteed to be unique.
+// The ID of a task doesn't change if the task is being retried.
+func GetTaskID(ctx context.Context) string {
+	id, ok := asynq.GetTaskID(ctx)
+	if !ok {
+		return ""
+	}
+	return id
+}
