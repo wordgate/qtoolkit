@@ -1,0 +1,77 @@
+# AI Module Configuration Template
+# Add this to your main config.yml file
+#
+# Configuration path: ai.*
+# Environment variables: AI_<PROVIDER>_API_KEY, AI_<PROVIDER>_BASE_URL
+
+ai:
+  # Default provider to use when calling ai.Get() without arguments
+  default: "openai"
+
+  providers:
+    # OpenAI Configuration
+    openai:
+      api_key: "YOUR_OPENAI_API_KEY"
+      # base_url: "https://api.openai.com/v1"  # Optional, defaults to OpenAI
+      model: "gpt-4o"
+
+    # DeepSeek Configuration
+    deepseek:
+      api_key: "YOUR_DEEPSEEK_API_KEY"
+      base_url: "https://api.deepseek.com"
+      model: "deepseek-chat"
+
+    # Claude (Anthropic) Configuration
+    # Note: Claude uses a different API format, use with compatible proxy
+    claude:
+      api_key: "YOUR_ANTHROPIC_API_KEY"
+      base_url: "https://api.anthropic.com/v1"
+      model: "claude-3-5-sonnet-20241022"
+
+    # Azure OpenAI Configuration
+    azure:
+      api_key: "YOUR_AZURE_OPENAI_KEY"
+      base_url: "https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT"
+      model: "gpt-4o"
+
+    # Ollama (Local) Configuration
+    # No API key required for local Ollama
+    ollama:
+      base_url: "http://localhost:11434/v1"
+      model: "llama3.2"
+
+    # Groq Configuration
+    groq:
+      api_key: "YOUR_GROQ_API_KEY"
+      base_url: "https://api.groq.com/openai/v1"
+      model: "llama-3.3-70b-versatile"
+
+    # Together AI Configuration
+    together:
+      api_key: "YOUR_TOGETHER_API_KEY"
+      base_url: "https://api.together.xyz/v1"
+      model: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+
+    # Moonshot (Kimi) Configuration
+    moonshot:
+      api_key: "YOUR_MOONSHOT_API_KEY"
+      base_url: "https://api.moonshot.cn/v1"
+      model: "moonshot-v1-8k"
+
+    # Zhipu (GLM) Configuration
+    zhipu:
+      api_key: "YOUR_ZHIPU_API_KEY"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-4-flash"
+
+    # Qwen (Alibaba Cloud) Configuration
+    qwen:
+      api_key: "YOUR_QWEN_API_KEY"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      model: "qwen-turbo"
+
+# Security Notes:
+# - Never commit real API keys to version control
+# - Use environment variables for production (e.g., AI_OPENAI_API_KEY)
+# - Rotate API keys regularly
+# - Use minimum required permissions for each provider
