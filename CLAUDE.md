@@ -134,6 +134,65 @@ qtoolkit/
 
 ## v1.0 模块化开发规范
 
+### 🎯 Less is More 设计哲学
+
+v1.0 架构的核心原则是**极简主义**。每一行代码、每一个配置项、每一个 API 都必须证明其存在的必要性。
+
+#### API 设计原则
+
+1. **只暴露必需的 API**
+   - 不提供"可能有用"的便捷方法
+   - 用户可以通过组合基础 API 实现高级功能
+   - 删除比添加更难，谨慎暴露公开接口
+
+2. **配置项最小化**
+   - 只保留无法通过其他途径配置的选项
+   - 能在服务端配置的不在 SDK 配置（如 Slack bot 名称在 Webhook 后台设置）
+   - 有合理默认值的配置项应设为可选
+
+3. **不做过度抽象**
+   - 不为"未来可能的需求"预留接口
+   - 不封装只用一次的逻辑
+   - 三行重复代码优于一个过早抽象
+
+#### 代码审查检查点
+
+每次代码审查时问自己：
+- [ ] 这个 API/配置项能删掉吗？
+- [ ] 这个功能是"必须有"还是"最好有"？
+- [ ] 用户能用现有 API 组合实现吗？
+- [ ] 删除它会让模块更难用吗？
+
+#### 示例
+
+```go
+// ❌ 过度设计
+slack.SetDefaultChannel("alert")
+slack.SetUsername("Bot")
+slack.SetIconEmoji(":robot:")
+slack.Alert("message")           // 预设 channel 的便捷方法
+slack.AlertWithColor("msg", "red")
+
+// ✅ 极简设计
+slack.Send("alert", "message")
+slack.To("alert").Text("msg").Color("red").Send()
+```
+
+```yaml
+# ❌ 过度配置
+slack:
+  default_channel: "alert"    # 用户应该明确指定
+  username: "Bot"             # Slack 后台可配置
+  icon_emoji: ":robot:"       # Slack 后台可配置
+  retry_count: 3              # 大多数情况默认值足够
+  retry_delay: "1s"
+
+# ✅ 极简配置
+slack:
+  alert: "https://hooks.slack.com/..."
+  notify: "https://hooks.slack.com/..."
+```
+
 ### 🎯 Feature开发优先级
 1. **新功能**: 必须按v1模块化架构开发
 2. **Bug修复**: v0.x修复，同时在v1中实现
