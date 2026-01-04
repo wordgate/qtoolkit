@@ -1,3 +1,14 @@
+# Slack Configuration
+# Add to your main config.yml
 
 slack:
-  alert: https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK_URL
+  # Channel webhooks
+  alert: "https://hooks.slack.com/services/YOUR_WEBHOOK"
+  notify: "https://hooks.slack.com/services/YOUR_WEBHOOK"
+
+  # HTTP timeout (optional, default: 10s)
+  # timeout: "10s"
+
+# Usage:
+#   slack.Send("alert", "Server down!")
+#   slack.To("alert").Text("Deployed").Color(slack.ColorGood).Field("Ver", "v1.0", true).Send()
