@@ -40,8 +40,9 @@ const (
 
 // Config holds Slack module configuration.
 type Config struct {
-	Channels map[string]string `yaml:"channels"` // channel name -> webhook URL
-	Timeout  time.Duration     `yaml:"timeout"`  // HTTP timeout (default: 10s)
+	Channels map[string]string `yaml:"channels"`  // channel name -> webhook URL
+	BotToken string            `yaml:"bot_token"` // Bot token for API calls (xoxb-xxx)
+	Timeout  time.Duration     `yaml:"timeout"`   // HTTP timeout (default: 10s)
 }
 
 var (
@@ -56,6 +57,8 @@ func loadConfigFromViper() *Config {
 		Channels: make(map[string]string),
 		Timeout:  10 * time.Second,
 	}
+
+	cfg.BotToken = viper.GetString("slack.bot_token")
 
 	if timeout := viper.GetDuration("slack.timeout"); timeout > 0 {
 		cfg.Timeout = timeout

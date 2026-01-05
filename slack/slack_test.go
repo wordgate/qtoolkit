@@ -204,3 +204,134 @@ func TestIsConfigured(t *testing.T) {
 		t.Error("IsConfigured(nonexistent) = true, want false")
 	}
 }
+
+func TestSendDM_NoBotToken(t *testing.T) {
+	resetState()
+	SetConfig(&Config{Timeout: 10 * time.Second})
+
+	err := SendDM("user@example.com", "Hello")
+	if !errors.Is(err, ErrNoBotToken) {
+		t.Errorf("error = %v, want %v", err, ErrNoBotToken)
+	}
+}
+
+func TestSendDM_EmptyMessage(t *testing.T) {
+	resetState()
+	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+
+	err := DM("user@example.com").Send()
+	if !errors.Is(err, ErrEmptyMessage) {
+		t.Errorf("error = %v, want %v", err, ErrEmptyMessage)
+	}
+}
+
+func TestSendDM_UserNotFound(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/users.lookupByEmail" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":    false,
+				"error": "users_not_found",
+			})
+		}
+	}))
+	defer server.Close()
+
+	slackAPIBase = server.URL
+	defer func() { slackAPIBase = "https://slack.com/api" }()
+
+	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+
+	err := SendDM("unknown@example.com", "Hello")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("error = %v, want %v", err, ErrUserNotFound)
+	}
+}
+
+func TestSendDM_Success(t *testing.T) {
+	resetState()
+
+	var receivedChannel, receivedText string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/users.lookupByEmail" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":   true,
+				"user": map[string]string{"id": "U12345"},
+			})
+			return
+		}
+		if r.URL.Path == "/chat.postMessage" {
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]any
+			json.Unmarshal(body, &payload)
+			receivedChannel = payload["channel"].(string)
+			receivedText = payload["text"].(string)
+			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+	}))
+	defer server.Close()
+
+	slackAPIBase = server.URL
+	defer func() { slackAPIBase = "https://slack.com/api" }()
+
+	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+
+	if err := SendDM("user@example.com", "Hello!"); err != nil {
+		t.Fatalf("SendDM error: %v", err)
+	}
+	if receivedChannel != "U12345" {
+		t.Errorf("channel = %q, want %q", receivedChannel, "U12345")
+	}
+	if receivedText != "Hello!" {
+		t.Errorf("text = %q, want %q", receivedText, "Hello!")
+	}
+}
+
+func TestDMBuilder_RichMessage(t *testing.T) {
+	resetState()
+
+	var receivedPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/users.lookupByEmail" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":   true,
+				"user": map[string]string{"id": "U12345"},
+			})
+			return
+		}
+		if r.URL.Path == "/chat.postMessage" {
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &receivedPayload)
+			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+	}))
+	defer server.Close()
+
+	slackAPIBase = server.URL
+	defer func() { slackAPIBase = "https://slack.com/api" }()
+
+	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+
+	err := DM("user@example.com").
+		Text("Deploy done").
+		Color(ColorGood).
+		Field("Env", "prod", true).
+		Send()
+
+	if err != nil {
+		t.Fatalf("Send error: %v", err)
+	}
+	if receivedPayload["text"] != "Deploy done" {
+		t.Errorf("text = %v, want %q", receivedPayload["text"], "Deploy done")
+	}
+	attachments := receivedPayload["attachments"].([]any)
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+}
