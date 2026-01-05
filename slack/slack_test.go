@@ -105,7 +105,7 @@ func TestMessageBuilder_Timestamp(t *testing.T) {
 
 func TestSend_NoWebhook(t *testing.T) {
 	resetState()
-	SetConfig(&Config{Channels: map[string]string{}, Timeout: 10 * time.Second})
+	SetConfig(&Config{Webhooks: map[string]string{}})
 
 	err := Send("nonexistent", "Hello")
 	if !errors.Is(err, ErrNoWebhookURL) {
@@ -125,8 +125,7 @@ func TestSend_Success(t *testing.T) {
 	defer server.Close()
 
 	SetConfig(&Config{
-		Channels: map[string]string{"test": server.URL},
-		Timeout:  10 * time.Second,
+		Webhooks: map[string]string{"test": server.URL},
 	})
 
 	if err := Send("test", "Hello"); err != nil {
@@ -149,8 +148,7 @@ func TestSend_RichMessage(t *testing.T) {
 	defer server.Close()
 
 	SetConfig(&Config{
-		Channels: map[string]string{"deploy": server.URL},
-		Timeout:  10 * time.Second,
+		Webhooks: map[string]string{"deploy": server.URL},
 	})
 
 	err := To("deploy").
@@ -180,8 +178,7 @@ func TestSend_ServerError(t *testing.T) {
 	defer server.Close()
 
 	SetConfig(&Config{
-		Channels: map[string]string{"test": server.URL},
-		Timeout:  10 * time.Second,
+		Webhooks: map[string]string{"test": server.URL},
 	})
 
 	err := Send("test", "Hello")
@@ -193,8 +190,7 @@ func TestSend_ServerError(t *testing.T) {
 func TestIsConfigured(t *testing.T) {
 	resetState()
 	SetConfig(&Config{
-		Channels: map[string]string{"alert": "https://example.com"},
-		Timeout:  10 * time.Second,
+		Webhooks: map[string]string{"alert": "https://example.com"},
 	})
 
 	if !IsConfigured("alert") {
@@ -207,7 +203,7 @@ func TestIsConfigured(t *testing.T) {
 
 func TestSendDM_NoBotToken(t *testing.T) {
 	resetState()
-	SetConfig(&Config{Timeout: 10 * time.Second})
+	SetConfig(&Config{})
 
 	err := SendDM("user@example.com", "Hello")
 	if !errors.Is(err, ErrNoBotToken) {
@@ -217,7 +213,7 @@ func TestSendDM_NoBotToken(t *testing.T) {
 
 func TestSendDM_EmptyMessage(t *testing.T) {
 	resetState()
-	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+	SetConfig(&Config{BotToken: "xoxb-test"})
 
 	err := DM("user@example.com").Send()
 	if !errors.Is(err, ErrEmptyMessage) {
@@ -242,7 +238,7 @@ func TestSendDM_UserNotFound(t *testing.T) {
 	slackAPIBase = server.URL
 	defer func() { slackAPIBase = "https://slack.com/api" }()
 
-	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+	SetConfig(&Config{BotToken: "xoxb-test"})
 
 	err := SendDM("unknown@example.com", "Hello")
 	if !errors.Is(err, ErrUserNotFound) {
@@ -278,7 +274,7 @@ func TestSendDM_Success(t *testing.T) {
 	slackAPIBase = server.URL
 	defer func() { slackAPIBase = "https://slack.com/api" }()
 
-	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+	SetConfig(&Config{BotToken: "xoxb-test"})
 
 	if err := SendDM("user@example.com", "Hello!"); err != nil {
 		t.Fatalf("SendDM error: %v", err)
@@ -316,7 +312,7 @@ func TestDMBuilder_RichMessage(t *testing.T) {
 	slackAPIBase = server.URL
 	defer func() { slackAPIBase = "https://slack.com/api" }()
 
-	SetConfig(&Config{BotToken: "xoxb-test", Timeout: 10 * time.Second})
+	SetConfig(&Config{BotToken: "xoxb-test"})
 
 	err := DM("user@example.com").
 		Text("Deploy done").

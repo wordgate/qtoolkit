@@ -134,6 +134,51 @@ qtoolkit/
 
 ## v1.0 模块化开发规范
 
+### 🚫 不向后兼容原则
+
+v1.0 架构**坚决不向后兼容**。这是设计决策，不是疏忽。
+
+#### 为什么不向后兼容
+
+1. **技术债务清零** - 旧的设计错误不应该永远背负
+2. **API 纯净** - 没有 legacy 代码路径，没有 deprecated 标记
+3. **配置简洁** - 不支持多种配置格式，只有一种正确方式
+4. **代码可读** - 没有"为了兼容旧版本"的特殊处理
+
+#### 实践要求
+
+- ❌ 不保留旧的配置路径
+- ❌ 不添加 deprecated 函数
+- ❌ 不写 migration 代码
+- ❌ 不支持多种配置格式
+- ✅ 直接删除旧代码
+- ✅ 用户升级时必须更新配置
+- ✅ 在 CHANGELOG 中说明 breaking changes
+
+#### 示例
+
+```go
+// ❌ 错误：保留旧接口
+func SetWebhookURL(url string) { /* deprecated */ }
+func SetConfig(cfg *Config) { /* 新方式 */ }
+
+// ✅ 正确：只有新接口
+func SetConfig(cfg *Config) { /* 唯一方式 */ }
+```
+
+```yaml
+# ❌ 错误：支持多种配置格式
+slack:
+  webhook_url: "..."  # 旧格式，仍然支持
+  webhooks:           # 新格式
+    alert: "..."
+
+# ✅ 正确：只有一种格式
+slack:
+  webhooks:
+    alert: "..."
+```
+
 ### 🎯 Less is More 设计哲学
 
 v1.0 架构的核心原则是**极简主义**。每一行代码、每一个配置项、每一个 API 都必须证明其存在的必要性。
@@ -189,8 +234,9 @@ slack:
 
 # ✅ 极简配置
 slack:
-  alert: "https://hooks.slack.com/..."
-  notify: "https://hooks.slack.com/..."
+  webhooks:
+    alert: "https://hooks.slack.com/..."
+    notify: "https://hooks.slack.com/..."
 ```
 
 ### 🎯 Feature开发优先级
@@ -334,81 +380,24 @@ v1.0架构的所有模块遵循统一的配置自动加载规则：
 2. **级联配置回退**: 从具体到通用的多级配置查找
 3. **懒加载初始化**: 使用 `sync.Once` 实现首次使用时自动加载
 4. **线程安全**: 使用 `sync.RWMutex` 保护配置读写
-5. **向后兼容**: 保留 `SetConfig()` 作为废弃接口
-6. **外部透明**: 应用只需在启动时加载配置文件，模块自动完成配置
+5. **外部透明**: 应用只需在启动时加载配置文件，模块自动完成配置
 
 ### 配置文件结构
 
-#### 嵌套层级示例
+每个模块在自己的目录下提供 `*_config.yml` 配置模板。应用配置时参考各模块的配置文件：
 
-```yaml
-# config.yml - 应用主配置文件
-
-# 数据库配置
-database:
-  dsn: "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
-  debug: false
-
-# AWS全局配置（所有AWS服务的默认值）
-aws:
-  # 全局认证凭证
-  access_key: "YOUR_AWS_ACCESS_KEY"
-  secret_key: "YOUR_AWS_SECRET_KEY"
-  region: "us-west-2"
-  use_imds: false  # EC2上可设置为true使用IAM角色
-
-  # S3服务特定配置
-  s3:
-    bucket: "my-bucket"
-    url_prefix: "https://s3.us-west-2.amazonaws.com/my-bucket"
-    # region: "us-east-1"  # 可选：覆盖全局region
-
-  # SES服务特定配置
-  ses:
-    default_from: "noreply@example.com"
-    # 继承全局的 access_key, secret_key, region
-
-  # EC2服务配置
-  ec2:
-    # 完全使用全局配置
-
-  # SQS队列特定配置（3级配置）
-  sqs:
-    # region: "us-east-1"  # 可选：SQS服务级别默认
-    queues:
-      notifications:
-        region: "us-east-1"
-      background-jobs:
-        region: "us-west-2"
-        access_key: "SPECIAL_KEY"  # 队列特定凭证
-
-# 其他服务配置
-redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
-
-slack:
-  webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-aliyun:
-  access_key: "YOUR_ALIYUN_ACCESS_KEY"
-  access_secret: "YOUR_ALIYUN_ACCESS_SECRET"
-  region: "cn-hangzhou"
-
-godaddy:
-  api_key: "YOUR_GODADDY_API_KEY"
-  api_secret: "YOUR_GODADDY_API_SECRET"
-
-mail:
-  smtp_host: "smtp.example.com"
-  smtp_port: 587
-  username: "your@email.com"
-  password: "your_password"
-
-exchange_rate:
-  api_key: "YOUR_EXCHANGE_RATE_API_KEY"
-```
+| 模块 | 配置模板 |
+|------|---------|
+| AWS S3 | `aws/s3/s3_config.yml` |
+| AWS SES | `aws/ses/ses_config.yml` |
+| AWS SQS | `aws/sqs/sqs_config.yml` |
+| AWS EC2 | `aws/ec2/ec2_config.yml` |
+| Database | `db/db_config.yml` |
+| Redis | `redis/redis_config.yml` |
+| Slack | `slack/slack_config.yml` |
+| Aliyun | `aliyun/aliyun_config.yml` |
+| GoDaddy | `godaddy/godaddy_config.yml` |
+| DeepL | `deepl/deepl_config.yml` |
 
 ### 级联配置回退 (Cascading Fallback)
 
@@ -664,7 +653,7 @@ s3.SetConfig(&s3.Config{
 | **AWS SQS** | `aws.sqs.queues.<name>.*` → `aws.sqs.*` → `aws.*` | 3级 | `aws.sqs.queues.my-queue.region` → `aws.sqs.region` → `aws.region` |
 | **AWS EC2** | `aws.ec2.*` → `aws.*` | 2级 | `aws.ec2.region` → `aws.region` |
 | **Redis** | `redis.*` | 1级 | `redis.addr`, `redis.password`, `redis.db` |
-| **Slack** | `slack.*` | 1级 | `slack.webhook_url`, `slack.token` |
+| **Slack** | `slack.*` | 1级 | `slack.webhooks.*`, `slack.bot_token` |
 | **Aliyun** | `aliyun.*` | 1级 | `aliyun.access_key`, `aliyun.region` |
 | **GoDaddy** | `godaddy.*` | 1级 | `godaddy.api_key`, `godaddy.api_secret` |
 | **Mail** | `mail.*` | 1级 | `mail.smtp_host`, `mail.smtp_port` |

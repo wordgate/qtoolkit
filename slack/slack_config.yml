@@ -2,13 +2,20 @@
 # Add to your main config.yml
 
 slack:
-  # Channel webhooks
-  alert: "https://hooks.slack.com/services/YOUR_WEBHOOK"
-  notify: "https://hooks.slack.com/services/YOUR_WEBHOOK"
+  # Webhooks - name to URL mapping
+  webhooks:
+    alert: "https://hooks.slack.com/services/YOUR_WEBHOOK"
+    notify: "https://hooks.slack.com/services/YOUR_WEBHOOK"
 
-  # HTTP timeout (optional, default: 10s)
-  # timeout: "10s"
+  # Bot token for DM functionality (optional)
+  # Requires users:read.email and chat:write scopes
+  # bot_token: "xoxb-YOUR-BOT-TOKEN"
 
 # Usage:
-#   slack.Send("alert", "Server down!")
-#   slack.To("alert").Text("Deployed").Color(slack.ColorGood).Field("Ver", "v1.0", true).Send()
+#   Webhook:
+#     slack.Send("alert", "Server down!")
+#     slack.To("alert").Text("Deployed").Color(slack.ColorGood).Send()
+#
+#   DM:
+#     slack.SendDM("user@example.com", "Hello!")
+#     slack.DM("user@example.com").Text("Hi").Color(slack.ColorGood).Send()

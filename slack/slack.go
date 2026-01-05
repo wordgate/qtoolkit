@@ -40,9 +40,8 @@ const (
 
 // Config holds Slack module configuration.
 type Config struct {
-	Channels map[string]string `yaml:"channels"`  // channel name -> webhook URL
-	BotToken string            `yaml:"bot_token"` // Bot token for API calls (xoxb-xxx)
-	Timeout  time.Duration     `yaml:"timeout"`   // HTTP timeout (default: 10s)
+	Webhooks map[string]string `yaml:"webhooks"`  // webhook name -> URL
+	BotToken string            `yaml:"bot_token"` // Bot token for DM API (xoxb-xxx)
 }
 
 var (
@@ -54,34 +53,11 @@ var (
 
 func loadConfigFromViper() *Config {
 	cfg := &Config{
-		Channels: make(map[string]string),
-		Timeout:  10 * time.Second,
+		Webhooks: make(map[string]string),
 	}
 
 	cfg.BotToken = viper.GetString("slack.bot_token")
-
-	if timeout := viper.GetDuration("slack.timeout"); timeout > 0 {
-		cfg.Timeout = timeout
-	}
-
-	// Load from slack.channels map
-	if channels := viper.GetStringMapString("slack.channels"); len(channels) > 0 {
-		cfg.Channels = channels
-	}
-
-	// Legacy: slack.alert, slack.notify, etc.
-	if slackMap := viper.GetStringMap("slack"); len(slackMap) > 0 {
-		for key, value := range slackMap {
-			if key == "channels" || key == "timeout" {
-				continue
-			}
-			if url, ok := value.(string); ok && url != "" {
-				if _, exists := cfg.Channels[key]; !exists {
-					cfg.Channels[key] = url
-				}
-			}
-		}
-	}
+	cfg.Webhooks = viper.GetStringMapString("slack.webhooks")
 
 	return cfg
 }
@@ -98,7 +74,7 @@ func initialize() {
 		configMux.Unlock()
 	}
 
-	httpClient = &http.Client{Timeout: cfg.Timeout}
+	httpClient = &http.Client{Timeout: 10 * time.Second}
 }
 
 func ensureInitialized() {
@@ -117,9 +93,7 @@ func SetConfig(cfg *Config) {
 	configMux.Lock()
 	defer configMux.Unlock()
 	globalConfig = cfg
-	if cfg.Timeout > 0 {
-		httpClient = &http.Client{Timeout: cfg.Timeout}
-	}
+	httpClient = &http.Client{Timeout: 10 * time.Second}
 }
 
 // Field in an attachment.
@@ -293,7 +267,7 @@ func Sendf(channel, format string, args ...any) error {
 func sendPayload(channel string, p *payload) error {
 	cfg := getConfig()
 
-	url, ok := cfg.Channels[channel]
+	url, ok := cfg.Webhooks[channel]
 	if !ok || url == "" {
 		return fmt.Errorf("%w: channel %q", ErrNoWebhookURL, channel)
 	}
@@ -319,7 +293,7 @@ func sendPayload(channel string, p *payload) error {
 
 // GetWebhookURL returns the webhook URL for a channel.
 func GetWebhookURL(channel string) string {
-	return getConfig().Channels[channel]
+	return getConfig().Webhooks[channel]
 }
 
 // IsConfigured returns true if the channel has a webhook URL.
