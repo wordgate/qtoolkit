@@ -17,6 +17,7 @@ use (
 	./godaddy
 	./log
 	./mail
+	./nextpay
 	./redis
 	./slack
 	./unred

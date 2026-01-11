@@ -1,0 +1,61 @@
+# NextPay Configuration
+# Add to your main config.yml
+
+nextpay:
+  # API access key (required)
+  # Obtain from NextPay dashboard
+  access_key: "YOUR_NEXTPAY_ACCESS_KEY"
+
+  # API endpoint (optional, defaults to production)
+  # endpoint: "https://pay.arbella.group"
+
+  # Request timeout in seconds (optional, default: 30)
+  # timeout: 30
+
+# Usage Examples:
+#
+#   // Create subscription
+#   result, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
+#       UserID:     "user123",
+#       PlanID:     "plan_monthly",
+#       SuccessURL: "https://example.com/success",
+#       CancelURL:  "https://example.com/cancel",
+#   })
+#
+#   // Create one-time payment ($9.99)
+#   result, err := nextpay.CreateOrder(&nextpay.OrderRequest{
+#       UserID:   "user123",
+#       Amount:   999,  // in cents
+#       Currency: "USD",
+#   })
+#
+#   // Query subscriptions
+#   subs, err := nextpay.GetSubscriptions("user123")
+#
+#   // Usage-based billing
+#   nextpay.CreatePendingCharge(&nextpay.PendingChargeRequest{
+#       SubscriptionID: "sub_123",
+#       Amount:         500,
+#       Description:    "API usage",
+#   })
+#
+#   // Auto-recharge contract
+#   nextpay.CreateRechargeContract(&nextpay.RechargeContractRequest{
+#       UserID:     "user123",
+#       MaxAmount:  10000,  // max $100 per charge
+#       SuccessURL: "https://example.com/success",
+#       CancelURL:  "https://example.com/cancel",
+#   })
+
+# Supported Payment Methods:
+# - Credit Card (Visa/Mastercard/Amex) - supports auto-renewal
+# - Alipay - manual renewal
+# - WeChat Pay - manual renewal
+
+# Testing:
+# Use Stripe test card: 4242 4242 4242 4242
+# Any future expiry date, any 3-digit CVC
+
+# Security Notes:
+# - Never commit real API keys to version control
+# - Use environment variables for production
