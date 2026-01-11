@@ -12,7 +12,6 @@ import (
 	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/wordgate/qtoolkit/aws/cloudwatch"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -42,16 +41,6 @@ func initialize() {
 		gin.DefaultErrorWriter = logger.WriterLevel(logrus.ErrorLevel)
 	} else {
 		gin.DefaultErrorWriter = io.Discard
-	}
-
-	// Setup CloudWatch if enabled
-	if viper.GetBool("log.cloudwatch") {
-		hook, err := cloudwatch.NewHook()
-		if err != nil {
-			fmt.Printf("log: failed to setup CloudWatch: %v\n", err)
-		} else {
-			logger.AddHook(hook)
-		}
 	}
 }
 
