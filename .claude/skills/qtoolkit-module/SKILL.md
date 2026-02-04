@@ -1,11 +1,7 @@
 ---
 name: qtoolkit-module
 description: |
-  Develop Go modules for qtoolkit that wrap third-party SDKs with a clean, minimal API.
-  Always triggered when working in the qtoolkit project. Use for: (1) Creating new modules
-  to wrap third-party services (AWS, APIs, etc.), (2) Extending existing modules with new
-  functionality, (3) Migrating v0.x code to v1.0 modular architecture. Follows test-first
-  development, lazy initialization, and viper auto-configuration patterns.
+  Always triggered
 ---
 
 # qtoolkit Module Development
