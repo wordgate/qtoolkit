@@ -14,6 +14,7 @@ use (
 	./db
 	./deepl
 	./exchange
+	./github/issue
 	./godaddy
 	./log
 	./mail
