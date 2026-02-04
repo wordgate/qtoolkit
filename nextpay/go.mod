@@ -1,11 +1,8 @@
-module github.com/wordgate/qtoolkit/ai
+module github.com/wordgate/qtoolkit/nextpay
 
 go 1.24.0
 
-require (
-	github.com/openai/openai-go v0.1.0-alpha.44
-	github.com/spf13/viper v1.21.0
-)
+require github.com/spf13/viper v1.21.0
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -21,10 +18,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tidwall/gjson v1.14.4 // indirect
-	github.com/tidwall/match v1.1.1 // indirect
-	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
