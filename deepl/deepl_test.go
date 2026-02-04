@@ -2,12 +2,38 @@ package deepl
 
 import (
 	"context"
+	"os"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
+// skipIfNoAPIKey skips the test if DeepL API key is not configured
+func skipIfNoAPIKey(t *testing.T) {
+	t.Helper()
+
+	// Check environment variable
+	if os.Getenv("DEEPL_API_KEY") != "" {
+		return
+	}
+
+	// Check viper config
+	if key := viper.GetString("deepl.api_key"); key != "" && key != "YOUR_DEEPL_API_KEY" {
+		return
+	}
+
+	t.Skip("Skipping test: DEEPL_API_KEY not configured (set DEEPL_API_KEY env or deepl.api_key in config)")
+}
+
 func TestTranslateTpl(t *testing.T) {
-	// 需要配置文件中有正确的 API Key
+	skipIfNoAPIKey(t)
+
+	// Reset client for clean test
+	clientOnce = sync.Once{}
+	defaultClient = nil
+	clientErr = nil
 
 	tests := []struct {
 		name       string
@@ -78,7 +104,12 @@ func TestTranslateTpl(t *testing.T) {
 }
 
 func TestTranslateTpls(t *testing.T) {
-	// 需要配置文件中有正确的 API Key
+	skipIfNoAPIKey(t)
+
+	// Reset client for clean test
+	clientOnce = sync.Once{}
+	defaultClient = nil
+	clientErr = nil
 
 	tests := []struct {
 		name       string
