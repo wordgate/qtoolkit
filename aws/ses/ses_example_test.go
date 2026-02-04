@@ -3,17 +3,16 @@ package ses_test
 import (
 	"fmt"
 
+	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/aws/ses"
 )
 
 // ExampleSendMail demonstrates the ultra-simple API using default sender
 func ExampleSendMail() {
-	// Configure SES once
-	ses.SetConfig(&ses.Config{
-		Region:      "us-east-1",
-		DefaultFrom: "noreply@yourdomain.com",
-		UseIMDS:     true,
-	})
+	// Configure SES via viper once
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.default_from", "noreply@yourdomain.com")
+	viper.Set("aws.ses.use_imds", true)
 
 	// Then just use 3 parameters! (automatically initialized on first call)
 	err := ses.SendMail("user@example.com", "Welcome", "Thank you for signing up!")
@@ -27,12 +26,10 @@ func ExampleSendMail() {
 
 // ExampleSendRichMail demonstrates sending HTML email using default sender
 func ExampleSendRichMail() {
-	// Configure SES once
-	ses.SetConfig(&ses.Config{
-		Region:      "us-east-1",
-		DefaultFrom: "noreply@yourdomain.com",
-		UseIMDS:     true,
-	})
+	// Configure SES via viper once
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.default_from", "noreply@yourdomain.com")
+	viper.Set("aws.ses.use_imds", true)
 
 	// Send HTML email with 3 parameters
 	htmlContent := "<h1>Newsletter</h1><p>Check out our latest updates!</p>"
@@ -47,11 +44,9 @@ func ExampleSendRichMail() {
 
 // ExampleSendSimpleEmail demonstrates sending a simple text email
 func ExampleSendSimpleEmail() {
-	// Configure SES (optional on EC2 with IAM Role)
-	ses.SetConfig(&ses.Config{
-		Region:  "us-east-1",
-		UseIMDS: true,
-	})
+	// Configure SES via viper (optional on EC2 with IAM Role)
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.use_imds", true)
 
 	// Send a simple email
 	resp, err := ses.SendSimpleEmail(
@@ -71,10 +66,8 @@ func ExampleSendSimpleEmail() {
 
 // ExampleSendHTMLEmail demonstrates sending an HTML email
 func ExampleSendHTMLEmail() {
-	ses.SetConfig(&ses.Config{
-		Region:  "us-east-1",
-		UseIMDS: true,
-	})
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.use_imds", true)
 
 	// Send HTML email
 	resp, err := ses.SendHTMLEmail(
@@ -94,10 +87,8 @@ func ExampleSendHTMLEmail() {
 
 // ExampleSendEmail demonstrates sending an email with all options
 func ExampleSendEmail() {
-	ses.SetConfig(&ses.Config{
-		Region:  "us-east-1",
-		UseIMDS: true,
-	})
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.use_imds", true)
 
 	// Send email with CC, BCC, and Reply-To
 	resp, err := ses.SendEmail(&ses.EmailRequest{
@@ -123,10 +114,8 @@ func ExampleSendEmail() {
 func ExampleSendEmail_ec2IAMRole() {
 	// On EC2 with IAM Role, minimal configuration needed!
 	// The SDK will automatically use the instance's IAM Role
-	ses.SetConfig(&ses.Config{
-		Region:  "us-east-1",
-		UseIMDS: true, // Use EC2 IAM role
-	})
+	viper.Set("aws.ses.region", "us-east-1")
+	viper.Set("aws.ses.use_imds", true) // Use EC2 IAM role
 
 	resp, err := ses.SendSimpleEmail(
 		"noreply@example.com",
