@@ -2,32 +2,13 @@ package db
 
 import (
 	"testing"
+
+	"github.com/spf13/viper"
 )
-
-func TestSetConfig(t *testing.T) {
-	Reset() // Reset state for clean test
-
-	cfg := &Config{
-		DSN:   "test_dsn",
-		Debug: true,
-	}
-
-	SetConfig(cfg)
-
-	retrieved := GetConfig()
-	if retrieved == nil {
-		t.Error("Expected config to be set, got nil")
-	}
-	if retrieved.DSN != "test_dsn" {
-		t.Errorf("Expected DSN 'test_dsn', got '%s'", retrieved.DSN)
-	}
-	if !retrieved.Debug {
-		t.Error("Expected Debug to be true")
-	}
-}
 
 func TestGetWithoutConfig(t *testing.T) {
 	Reset() // Reset state for clean test
+	viper.Reset()
 
 	// Don't set config
 	db := Get()
@@ -45,6 +26,7 @@ func TestGetWithoutConfig(t *testing.T) {
 
 func TestMustGetWithoutConfig_ShouldPanic(t *testing.T) {
 	Reset() // Reset state for clean test
+	viper.Reset()
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -57,11 +39,10 @@ func TestMustGetWithoutConfig_ShouldPanic(t *testing.T) {
 
 func TestLazyLoadOnlyOnce(t *testing.T) {
 	Reset() // Reset state for clean test
+	viper.Reset()
 
-	// Set invalid config
-	SetConfig(&Config{
-		DSN: "", // Invalid DSN
-	})
+	// Set invalid config (empty DSN)
+	viper.Set("database.dsn", "")
 
 	// Call Get multiple times
 	db1 := Get()
@@ -86,20 +67,14 @@ func TestLazyLoadOnlyOnce(t *testing.T) {
 
 func TestReset(t *testing.T) {
 	Reset() // Reset state for clean test
+	viper.Reset()
 
-	// Set config
-	SetConfig(&Config{
-		DSN:   "test_dsn",
-		Debug: true,
-	})
+	// Set config via viper
+	viper.Set("database.dsn", "test_dsn")
+	viper.Set("database.debug", true)
 
 	// Reset
 	Reset()
-
-	// Config should be nil after reset
-	if GetConfig() != nil {
-		t.Error("Expected config to be nil after Reset")
-	}
 
 	// Error should be nil after reset
 	if GetError() != nil {
@@ -107,13 +82,11 @@ func TestReset(t *testing.T) {
 	}
 }
 
-// Example of lazy load usage
+// Example of lazy load usage with viper configuration
 func ExampleGet() {
-	// Set configuration before first use
-	SetConfig(&Config{
-		DSN:   "user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4",
-		Debug: false,
-	})
+	// Set configuration via viper before first use
+	viper.Set("database.dsn", "user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4")
+	viper.Set("database.debug", false)
 
 	// Database is automatically initialized on first Get() call
 	db := Get()
@@ -125,11 +98,9 @@ func ExampleGet() {
 
 // Example of must get usage
 func ExampleMustGet() {
-	// Set configuration
-	SetConfig(&Config{
-		DSN:   "user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4",
-		Debug: true,
-	})
+	// Set configuration via viper
+	viper.Set("database.dsn", "user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4")
+	viper.Set("database.debug", true)
 
 	// Database is automatically initialized, panics if failed
 	db := MustGet()
