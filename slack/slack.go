@@ -38,6 +38,13 @@ const (
 	ColorDanger  = "danger"  // Red
 )
 
+// Slack API limits
+const (
+	MaxTextLength = 40000 // Slack truncates text fields beyond 40,000 characters
+
+	defaultTruncationSuffix = "\n...[truncated]"
+)
+
 // Config holds Slack module configuration.
 type Config struct {
 	Webhooks map[string]string `yaml:"webhooks"`  // webhook name -> URL
@@ -264,6 +271,26 @@ func Sendf(channel, format string, args ...any) error {
 	return To(channel).Textf(format, args...).Send()
 }
 
+// truncateText truncates s to fit within maxLen runes, appending suffix if truncated.
+func truncateText(s string, maxLen int, suffix string) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	suffixRunes := []rune(suffix)
+	cutAt := max(maxLen-len(suffixRunes), 0)
+	return string(runes[:cutAt]) + suffix
+}
+
+// truncatePayload truncates text fields in a payload to stay within Slack limits.
+func truncatePayload(p *payload) {
+	p.Text = truncateText(p.Text, MaxTextLength, defaultTruncationSuffix)
+	for i := range p.Attachments {
+		p.Attachments[i].Text = truncateText(p.Attachments[i].Text, MaxTextLength, defaultTruncationSuffix)
+		p.Attachments[i].Pretext = truncateText(p.Attachments[i].Pretext, MaxTextLength, defaultTruncationSuffix)
+	}
+}
+
 func sendPayload(channel string, p *payload) error {
 	cfg := getConfig()
 
@@ -271,6 +298,8 @@ func sendPayload(channel string, p *payload) error {
 	if !ok || url == "" {
 		return fmt.Errorf("%w: channel %q", ErrNoWebhookURL, channel)
 	}
+
+	truncatePayload(p)
 
 	body, err := json.Marshal(p)
 	if err != nil {

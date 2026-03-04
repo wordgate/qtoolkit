@@ -152,6 +152,12 @@ func (b *DMBuilder) Send() error {
 }
 
 func postMessage(token, channel, text string, attachments []Attachment) error {
+	text = truncateText(text, MaxTextLength, defaultTruncationSuffix)
+	for i := range attachments {
+		attachments[i].Text = truncateText(attachments[i].Text, MaxTextLength, defaultTruncationSuffix)
+		attachments[i].Pretext = truncateText(attachments[i].Pretext, MaxTextLength, defaultTruncationSuffix)
+	}
+
 	payload := map[string]any{
 		"channel": channel,
 		"text":    text,

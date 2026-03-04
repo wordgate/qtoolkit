@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -284,6 +285,75 @@ func TestSendDM_Success(t *testing.T) {
 	}
 	if receivedText != "Hello!" {
 		t.Errorf("text = %q, want %q", receivedText, "Hello!")
+	}
+}
+
+func TestTruncateText(t *testing.T) {
+	suffix := "\n...[truncated]"
+
+	t.Run("short text unchanged", func(t *testing.T) {
+		got := truncateText("hello", 100, suffix)
+		if got != "hello" {
+			t.Errorf("got %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("exact limit unchanged", func(t *testing.T) {
+		text := strings.Repeat("a", 100)
+		got := truncateText(text, 100, suffix)
+		if got != text {
+			t.Errorf("length = %d, want %d", len(got), 100)
+		}
+	})
+
+	t.Run("over limit truncated with suffix", func(t *testing.T) {
+		text := strings.Repeat("a", 200)
+		got := truncateText(text, 100, suffix)
+		if len([]rune(got)) != 100 {
+			t.Errorf("rune length = %d, want 100", len([]rune(got)))
+		}
+		if !strings.HasSuffix(got, suffix) {
+			t.Errorf("should end with suffix %q", suffix)
+		}
+	})
+
+	t.Run("unicode rune-safe", func(t *testing.T) {
+		text := strings.Repeat("你", 200)
+		got := truncateText(text, 100, suffix)
+		runes := []rune(got)
+		if len(runes) != 100 {
+			t.Errorf("rune length = %d, want 100", len(runes))
+		}
+		if !strings.HasSuffix(got, suffix) {
+			t.Errorf("should end with suffix")
+		}
+	})
+}
+
+func TestSend_TruncatesLongMessage(t *testing.T) {
+	resetState()
+
+	var received payload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		Webhooks: map[string]string{"test": server.URL},
+	})
+
+	longText := strings.Repeat("x", MaxTextLength+1000)
+	if err := Send("test", longText); err != nil {
+		t.Fatalf("Send error: %v", err)
+	}
+	if len([]rune(received.Text)) != MaxTextLength {
+		t.Errorf("received text rune length = %d, want %d", len([]rune(received.Text)), MaxTextLength)
+	}
+	if !strings.HasSuffix(received.Text, "[truncated]") {
+		t.Error("truncated message should end with [truncated]")
 	}
 }
 
