@@ -4,16 +4,13 @@
 fastgpt:
   # Application-specific API key (includes AppId)
   # Create at: FastGPT Dashboard → App → API Access
-  # Can also be set via FASTGPT_API_KEY environment variable
   api_key: "YOUR_FASTGPT_API_KEY"
 
   # FastGPT server base URL (self-hosted or cloud)
-  # Can also be set via FASTGPT_BASE_URL environment variable
   base_url: "https://your-fastgpt.com"
 
 # Security Notes:
 # - Never commit real API keys to version control
-# - Use environment variables for production
 # - Use app-specific keys (not global keys) for chat endpoints
 # - Rotate API keys regularly
 

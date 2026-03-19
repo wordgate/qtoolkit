@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -38,18 +37,10 @@ var (
 )
 
 func loadConfigFromViper() *Config {
-	cfg := &Config{
+	return &Config{
 		APIKey:  viper.GetString("fastgpt.api_key"),
 		BaseURL: viper.GetString("fastgpt.base_url"),
 	}
-	// Environment variable fallback
-	if env := os.Getenv("FASTGPT_API_KEY"); env != "" {
-		cfg.APIKey = env
-	}
-	if env := os.Getenv("FASTGPT_BASE_URL"); env != "" {
-		cfg.BaseURL = env
-	}
-	return cfg
 }
 
 func initialize() {
