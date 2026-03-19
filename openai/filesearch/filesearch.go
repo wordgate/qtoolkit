@@ -62,14 +62,22 @@ type Citation struct {
 type Option func(*askConfig)
 
 type askConfig struct {
-	history []Message
-	images  []string
+	history      []Message
+	images       []string
+	systemPrompt string
 }
 
 // WithHistory provides conversation context (preceding messages).
 func WithHistory(messages []Message) Option {
 	return func(c *askConfig) {
 		c.history = messages
+	}
+}
+
+// WithSystemPrompt inserts a system message at the beginning of the input.
+func WithSystemPrompt(text string) Option {
+	return func(c *askConfig) {
+		c.systemPrompt = text
 	}
 }
 
@@ -227,6 +235,14 @@ func buildMessageContent(text string, images []string) any {
 // buildInput converts question + options into the OpenAI Responses API input array.
 func buildInput(question string, cfg *askConfig) []map[string]any {
 	var input []map[string]any
+
+	// System prompt goes first (before history and user question).
+	if cfg.systemPrompt != "" {
+		input = append(input, map[string]any{
+			"role":    "system",
+			"content": cfg.systemPrompt,
+		})
+	}
 
 	// Add history messages
 	for _, m := range cfg.history {
