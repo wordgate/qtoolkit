@@ -72,10 +72,10 @@ qtoolkit/
 ```
 
 ### v1.0 Architecture (Completed/Modular)
-Modular architecture, independent per service - **24 independent modules**:
+Modular architecture, independent per service - **25 independent modules**:
 ```
 qtoolkit/
-├── go.work                  # Workspace configuration (includes all 24 modules)
+├── go.work                  # Workspace configuration (includes all 25 modules)
 ├── go.mod                   # Root module
 ├── core/                    # Core module
 │   ├── go.mod
@@ -137,6 +137,9 @@ qtoolkit/
 │   └── go.mod
 ├── nextpay/                 # NextPay payment module
 │   └── go.mod
+├── openai/                  # OpenAI services
+│   └── filesearch/          # File search (knowledge base Q&A)
+│       └── go.mod
 ├── redis/                   # Redis module
 │   ├── go.mod
 │   ├── redis.go            # Client
@@ -467,6 +470,7 @@ Each module provides a `*_config.yml` configuration template in its own director
 | Asynq | `asynq/asynq_config.yml` |
 | Exchange | `exchange/exchange_config.yml` |
 | NextPay | `nextpay/nextpay_config.yml` |
+| OpenAI File Search | `openai/filesearch/filesearch_config.yml` |
 
 ### Cascading Configuration Fallback
 
@@ -547,6 +551,7 @@ func main() {
 | **Chatwoot** | `chatwoot.*` | 1 level | `chatwoot.api_token`, `chatwoot.base_url`, `chatwoot.account_id` |
 | **Exchange** | `exchange.*` | 1 level | `exchange.api_key`, `exchange.base_url` |
 | **NextPay** | `nextpay.*` | 1 level | `nextpay.api_key`, `nextpay.api_secret` |
+| **OpenAI File Search** | `openai.filesearch.*` → `ai.providers.openai.*` | 2 levels | `openai.filesearch.api_key` → `ai.providers.openai.api_key` |
 
 ## Asynq Async Task Module
 
@@ -753,7 +758,7 @@ func SetConfig(cfg *Config) {
 5. **Phase 5**: Documentation completion and v1.0 official release - ✅ Completed
 
 **v1.0 Migration Completion Status**:
-- ✅ All 24 independent modules completed
+- ✅ All 25 independent modules completed
 - ✅ Unified configuration auto-loading architecture implemented
 - ✅ Cascading configuration fallback system completed
 - ✅ Lazy-load + sync.Once initialization pattern applied to all modules
