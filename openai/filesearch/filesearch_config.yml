@@ -7,23 +7,30 @@ openai:
     # Falls back to ai.providers.openai.api_key if not set
     api_key: "YOUR_OPENAI_API_KEY"
 
-    # Vector store ID (required)
-    # Create at: OpenAI Dashboard → Storage → Vector Stores
-    vector_store_id: "vs_xxxxx"
-
-    # Model for generating answers (default: gpt-4o-mini)
+    # Default model for generating answers (default: gpt-4o-mini)
     model: "gpt-4o-mini"
 
-    # Max retrieved chunks (default: 5)
+    # Default max retrieved chunks (default: 5)
     # max_results: 5
+
+    # Named knowledge base stores (required, at least one)
+    # Each store maps to an OpenAI vector store.
+    # Per-store model/max_results override module-level defaults.
+    stores:
+      install:
+        vector_store_id: "vs_xxxxx"
+      # billing:
+      #   vector_store_id: "vs_yyyyy"
+      #   model: "gpt-4o"           # override default model
+      #   max_results: 10            # override default max_results
 
 # Security Notes:
 # - Never commit real API keys to version control
 # - Rotate API keys regularly
 
 # Usage:
-#   result, err := filesearch.Ask(ctx, "怎么安装app")
-#   result, err := filesearch.Ask(ctx, "这是什么",
+#   result, err := filesearch.Ask(ctx, "install", "怎么安装app")
+#   result, err := filesearch.Ask(ctx, "install", "这是什么",
 #       filesearch.WithImage("https://example.com/screenshot.png"),
 #       filesearch.WithHistory(history),
 #   )

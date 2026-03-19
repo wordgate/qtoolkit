@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	result, err := filesearch.Ask(ctx, "怎么安装app")
-//	result, err := filesearch.Ask(ctx, "这是什么界面",
+//	result, err := filesearch.Ask(ctx, "install", "怎么安装app")
+//	result, err := filesearch.Ask(ctx, "install", "这是什么界面",
 //	    filesearch.WithImage("https://s3.../screenshot.png"),
 //	    filesearch.WithHistory(history),
 //	)
@@ -22,9 +22,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config holds OpenAI file search configuration.
+// Config holds OpenAI file search module-level configuration.
 type Config struct {
-	APIKey         string  `yaml:"api_key"`
+	APIKey     string            `yaml:"api_key"`
+	Model      string            `yaml:"model"`
+	MaxResults int               `yaml:"max_results"`
+	Stores     map[string]*Store `yaml:"stores"`
+}
+
+// Store holds per-store configuration.
+type Store struct {
 	VectorStoreID string `yaml:"vector_store_id"`
 	Model         string `yaml:"model"`
 	MaxResults    int    `yaml:"max_results"`
@@ -84,10 +91,10 @@ var (
 
 func loadConfigFromViper() *Config {
 	cfg := &Config{
-		APIKey:         viper.GetString("openai.filesearch.api_key"),
-		VectorStoreID:  viper.GetString("openai.filesearch.vector_store_id"),
+		APIKey:     viper.GetString("openai.filesearch.api_key"),
 		Model:      viper.GetString("openai.filesearch.model"),
 		MaxResults: viper.GetInt("openai.filesearch.max_results"),
+		Stores:     make(map[string]*Store),
 	}
 	// Cascading fallback for api_key
 	if cfg.APIKey == "" {
@@ -99,6 +106,16 @@ func loadConfigFromViper() *Config {
 	}
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = 5
+	}
+	// Load named stores
+	storesMap := viper.GetStringMap("openai.filesearch.stores")
+	for name := range storesMap {
+		prefix := "openai.filesearch.stores." + name
+		cfg.Stores[name] = &Store{
+			VectorStoreID: viper.GetString(prefix + ".vector_store_id"),
+			Model:         viper.GetString(prefix + ".model"),
+			MaxResults:    viper.GetInt(prefix + ".max_results"),
+		}
 	}
 	return cfg
 }
@@ -129,6 +146,36 @@ func getConfig() *Config {
 	return globalConfig
 }
 
+// resolveStore returns the effective model, maxResults, and vectorStoreID
+// for a named store, with 3-level fallback:
+//
+//	store-specific → filesearch-level → defaults
+func resolveStore(cfg *Config, storeName string) (vectorStoreID, model string, maxResults int, err error) {
+	store, ok := cfg.Stores[storeName]
+	if !ok {
+		return "", "", 0, fmt.Errorf("filesearch: store %q not found in config", storeName)
+	}
+	if store.VectorStoreID == "" {
+		return "", "", 0, fmt.Errorf("filesearch: store %q has no vector_store_id", storeName)
+	}
+
+	vectorStoreID = store.VectorStoreID
+
+	// Model: store → module → default
+	model = store.Model
+	if model == "" {
+		model = cfg.Model
+	}
+
+	// MaxResults: store → module → default
+	maxResults = store.MaxResults
+	if maxResults <= 0 {
+		maxResults = cfg.MaxResults
+	}
+
+	return
+}
+
 // SetConfig sets configuration manually (for testing).
 func SetConfig(cfg *Config) {
 	configMux.Lock()
@@ -138,6 +185,9 @@ func SetConfig(cfg *Config) {
 	}
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = 5
+	}
+	if cfg.Stores == nil {
+		cfg.Stores = make(map[string]*Store)
 	}
 	globalConfig = cfg
 	httpClient = &http.Client{Timeout: 60 * time.Second}
@@ -219,10 +269,11 @@ type searchResult struct {
 	FileID   string  `json:"file_id"`
 }
 
-// Ask queries the knowledge base.
-// question is the current user question (explicit first parameter).
+// Ask queries a named knowledge base store.
+// storeName corresponds to a key under openai.filesearch.stores in config.
+// question is the current user question.
 // Options provide conversation history, images, etc.
-func Ask(ctx context.Context, question string, opts ...Option) (Result, error) {
+func Ask(ctx context.Context, storeName string, question string, opts ...Option) (Result, error) {
 	if question == "" {
 		return Result{}, fmt.Errorf("filesearch: question is required")
 	}
@@ -231,8 +282,10 @@ func Ask(ctx context.Context, question string, opts ...Option) (Result, error) {
 	if cfg.APIKey == "" {
 		return Result{}, fmt.Errorf("filesearch: api_key is required")
 	}
-	if cfg.VectorStoreID == "" {
-		return Result{}, fmt.Errorf("filesearch: vector_store_id is required")
+
+	vectorStoreID, model, maxResults, err := resolveStore(cfg, storeName)
+	if err != nil {
+		return Result{}, err
 	}
 
 	ac := &askConfig{}
@@ -241,13 +294,13 @@ func Ask(ctx context.Context, question string, opts ...Option) (Result, error) {
 	}
 
 	reqBody := map[string]any{
-		"model": cfg.Model,
+		"model": model,
 		"input": buildInput(question, ac),
 		"tools": []map[string]any{
 			{
 				"type":             "file_search",
-				"vector_store_ids": []string{cfg.VectorStoreID},
-				"max_num_results":  cfg.MaxResults,
+				"vector_store_ids": []string{vectorStoreID},
+				"max_num_results":  maxResults,
 			},
 		},
 		"tool_choice": "required",

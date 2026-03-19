@@ -122,21 +122,23 @@ func UploadFile(ctx context.Context, storeID string, filename string, reader io.
 
 // Search performs a direct vector search without LLM generation.
 // Useful for debugging and testing retrieval quality.
-func Search(ctx context.Context, query string) ([]Citation, error) {
+func Search(ctx context.Context, storeName string, query string) ([]Citation, error) {
 	cfg := getConfig()
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("filesearch: api_key is required")
 	}
-	if cfg.VectorStoreID == "" {
-		return nil, fmt.Errorf("filesearch: vector_store_id is required")
+
+	vectorStoreID, _, maxResults, err := resolveStore(cfg, storeName)
+	if err != nil {
+		return nil, err
 	}
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"query":       query,
-		"max_results": cfg.MaxResults,
+		"max_results": maxResults,
 	})
 
-	url := fmt.Sprintf("%s/v1/vector_stores/%s/search", baseURL, cfg.VectorStoreID)
+	url := fmt.Sprintf("%s/v1/vector_stores/%s/search", baseURL, vectorStoreID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("filesearch: request error: %w", err)

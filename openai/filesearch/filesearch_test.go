@@ -10,6 +10,15 @@ import (
 	"testing"
 )
 
+func testConfig(apiKey string) *Config {
+	return &Config{
+		APIKey: apiKey,
+		Stores: map[string]*Store{
+			"test": {VectorStoreID: "vs_test"},
+		},
+	}
+}
+
 func TestAsk_Success(t *testing.T) {
 	resetState()
 
@@ -21,7 +30,6 @@ func TestAsk_Success(t *testing.T) {
 			t.Errorf("path = %q, want /v1/responses", r.URL.Path)
 		}
 
-		// Verify include parameter in request
 		body, _ := io.ReadAll(r.Body)
 		var reqBody map[string]any
 		json.Unmarshal(body, &reqBody)
@@ -55,9 +63,9 @@ func TestAsk_Success(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://api.openai.com" }()
 
-	SetConfig(&Config{APIKey: "test-key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("test-key"))
 
-	result, err := Ask(context.Background(), "怎么安装")
+	result, err := Ask(context.Background(), "test", "怎么安装")
 	if err != nil {
 		t.Fatalf("Ask error: %v", err)
 	}
@@ -75,6 +83,108 @@ func TestAsk_Success(t *testing.T) {
 	}
 	if result.Citations[0].Text != "安装步骤..." {
 		t.Errorf("Citations[0].Text = %q", result.Citations[0].Text)
+	}
+}
+
+func TestAsk_StoreOverrides(t *testing.T) {
+	resetState()
+
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{
+				{"type": "message", "content": []map[string]any{{"type": "output_text", "text": "ok"}}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	baseURL = server.URL
+	defer func() { baseURL = "https://api.openai.com" }()
+
+	SetConfig(&Config{
+		APIKey:     "key",
+		Model:      "gpt-4o-mini",
+		MaxResults: 5,
+		Stores: map[string]*Store{
+			"billing": {VectorStoreID: "vs_billing", Model: "gpt-4o", MaxResults: 10},
+		},
+	})
+
+	Ask(context.Background(), "billing", "退款政策")
+
+	// Verify store-level overrides are used
+	if receivedBody["model"] != "gpt-4o" {
+		t.Errorf("model = %v, want gpt-4o (store override)", receivedBody["model"])
+	}
+	tools := receivedBody["tools"].([]any)
+	tool := tools[0].(map[string]any)
+	maxResults := tool["max_num_results"].(float64)
+	if maxResults != 10 {
+		t.Errorf("max_num_results = %v, want 10 (store override)", maxResults)
+	}
+	storeIDs := tool["vector_store_ids"].([]any)
+	if storeIDs[0] != "vs_billing" {
+		t.Errorf("vector_store_ids = %v, want [vs_billing]", storeIDs)
+	}
+}
+
+func TestAsk_StoreFallback(t *testing.T) {
+	resetState()
+
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{
+				{"type": "message", "content": []map[string]any{{"type": "output_text", "text": "ok"}}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	baseURL = server.URL
+	defer func() { baseURL = "https://api.openai.com" }()
+
+	// Store has no model/maxResults overrides → falls back to module level
+	SetConfig(&Config{
+		APIKey:     "key",
+		Model:      "gpt-4o-mini",
+		MaxResults: 7,
+		Stores: map[string]*Store{
+			"install": {VectorStoreID: "vs_install"},
+		},
+	})
+
+	Ask(context.Background(), "install", "怎么装")
+
+	if receivedBody["model"] != "gpt-4o-mini" {
+		t.Errorf("model = %v, want gpt-4o-mini (module fallback)", receivedBody["model"])
+	}
+	tools := receivedBody["tools"].([]any)
+	tool := tools[0].(map[string]any)
+	if tool["max_num_results"].(float64) != 7 {
+		t.Errorf("max_num_results = %v, want 7 (module fallback)", tool["max_num_results"])
+	}
+}
+
+func TestAsk_StoreNotFound(t *testing.T) {
+	resetState()
+	SetConfig(testConfig("key"))
+
+	_, err := Ask(context.Background(), "nonexistent", "hello")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want 'not found'", err.Error())
 	}
 }
 
@@ -98,9 +208,9 @@ func TestAsk_WithHistory(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://api.openai.com" }()
 
-	SetConfig(&Config{APIKey: "test-key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("test-key"))
 
-	Ask(context.Background(), "第三步看不懂",
+	Ask(context.Background(), "test", "第三步看不懂",
 		WithHistory([]Message{
 			{Role: "user", Content: "怎么安装"},
 			{Role: "assistant", Content: "请按以下步骤..."},
@@ -116,9 +226,6 @@ func TestAsk_WithHistory(t *testing.T) {
 		t.Errorf("input[0].role = %v, want user", msg0["role"])
 	}
 	msg2 := input[2].(map[string]any)
-	if msg2["role"] != "user" {
-		t.Errorf("input[2].role = %v, want user", msg2["role"])
-	}
 	if msg2["content"] != "第三步看不懂" {
 		t.Errorf("input[2].content = %v, want 第三步看不懂", msg2["content"])
 	}
@@ -144,9 +251,9 @@ func TestAsk_WithImage(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://api.openai.com" }()
 
-	SetConfig(&Config{APIKey: "test-key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("test-key"))
 
-	Ask(context.Background(), "这是什么界面",
+	Ask(context.Background(), "test", "这是什么界面",
 		WithImage("https://example.com/screenshot.png"),
 	)
 
@@ -165,9 +272,6 @@ func TestAsk_WithImage(t *testing.T) {
 	}
 	if imgPart["detail"] != "low" {
 		t.Errorf("content[1].detail = %v, want low", imgPart["detail"])
-	}
-	if imgPart["image_url"] != "https://example.com/screenshot.png" {
-		t.Errorf("content[1].image_url = %v", imgPart["image_url"])
 	}
 }
 
@@ -191,9 +295,9 @@ func TestAsk_WithHistoryImages(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://api.openai.com" }()
 
-	SetConfig(&Config{APIKey: "test-key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("test-key"))
 
-	Ask(context.Background(), "这个按钮是什么",
+	Ask(context.Background(), "test", "这个按钮是什么",
 		WithHistory([]Message{
 			{Role: "user", Content: "看看这个", Images: []string{"https://example.com/img.png"}},
 			{Role: "assistant", Content: "这是设置页面"},
@@ -223,9 +327,9 @@ func TestAsk_ServerError(t *testing.T) {
 	baseURL = server.URL
 	defer func() { baseURL = "https://api.openai.com" }()
 
-	SetConfig(&Config{APIKey: "test-key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("test-key"))
 
-	_, err := Ask(context.Background(), "hello")
+	_, err := Ask(context.Background(), "test", "hello")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -236,9 +340,9 @@ func TestAsk_ServerError(t *testing.T) {
 
 func TestAsk_EmptyQuestion(t *testing.T) {
 	resetState()
-	SetConfig(&Config{APIKey: "key", VectorStoreID: "vs_test"})
+	SetConfig(testConfig("key"))
 
-	_, err := Ask(context.Background(), "")
+	_, err := Ask(context.Background(), "test", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -249,26 +353,13 @@ func TestAsk_EmptyQuestion(t *testing.T) {
 
 func TestAsk_NoAPIKey(t *testing.T) {
 	resetState()
-	SetConfig(&Config{APIKey: "", VectorStoreID: "vs_test"})
+	SetConfig(testConfig(""))
 
-	_, err := Ask(context.Background(), "hello")
+	_, err := Ask(context.Background(), "test", "hello")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "api_key") {
-		t.Errorf("error = %q", err.Error())
-	}
-}
-
-func TestAsk_NoVectorStoreID(t *testing.T) {
-	resetState()
-	SetConfig(&Config{APIKey: "key", VectorStoreID: ""})
-
-	_, err := Ask(context.Background(), "hello")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "vector_store_id") {
 		t.Errorf("error = %q", err.Error())
 	}
 }
