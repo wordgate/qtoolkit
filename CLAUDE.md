@@ -662,6 +662,8 @@ s3.SetConfig(&s3.Config{
 | **Log** | `log.*` | 1级 | `log.level`, `log.format` |
 | **Unred** | `unred.*` | 1级 | `unred.api_url`, `unred.api_key` |
 | **Asynq** | `asynq.*` → `redis.*` | 2级 | `asynq.concurrency`, `asynq.queues` → `redis.addr` |
+| **FastGPT** | `fastgpt.*` | 1级 | `fastgpt.api_key`, `fastgpt.base_url` |
+| **Chatwoot** | `chatwoot.*` | 1级 | `chatwoot.api_token`, `chatwoot.base_url`, `chatwoot.account_id` |
 
 ## Asynq 异步任务模块
 
