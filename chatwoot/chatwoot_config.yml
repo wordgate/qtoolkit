@@ -1,11 +1,14 @@
-# Chatwoot Configuration
-# Add to your main config.yml
+# Chatwoot Configuration Template
+# Add this to your main config.yml file
 
 chatwoot:
-  # API access token (from Chatwoot profile settings)
+  # API access token (required)
+  # Get from: Chatwoot → Profile Settings → Access Token
+  # Can also be set via CHATWOOT_API_TOKEN environment variable
   api_token: "YOUR_CHATWOOT_API_TOKEN"
 
-  # Chatwoot server base URL
+  # Chatwoot server base URL (required)
+  # Can also be set via CHATWOOT_BASE_URL environment variable
   base_url: "https://your-chatwoot.com"
 
   # Account ID (required)
@@ -15,7 +18,19 @@ chatwoot:
   # Set in Chatwoot: Settings → Integrations → Webhooks
   # webhook_token: "YOUR_WEBHOOK_SECRET"
 
+# Security Notes:
+# - Never commit real API tokens to version control
+# - Use environment variables for production
+# - Enable webhook_token in production to prevent unauthorized webhook calls
+# - Use least-privilege API tokens
+
 # Usage:
 #   chatwoot.Mount(r, "/webhook", func(ctx context.Context, event chatwoot.Event) {
+#       if event.EventType != "message_created" {
+#           return
+#       }
+#       if event.Sender.Type != "contact" || event.MessageType != "incoming" {
+#           return
+#       }
 #       chatwoot.Reply(ctx, event.ConversationID, "Hello!")
 #   })

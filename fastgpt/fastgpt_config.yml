@@ -1,13 +1,33 @@
-# FastGPT Configuration
-# Add to your main config.yml
+# FastGPT Configuration Template
+# Add this to your main config.yml file
 
 fastgpt:
   # Application-specific API key (includes AppId)
   # Create at: FastGPT Dashboard → App → API Access
-  api_key: "fastgpt-xxxxxxxx"
+  # Can also be set via FASTGPT_API_KEY environment variable
+  api_key: "YOUR_FASTGPT_API_KEY"
 
   # FastGPT server base URL (self-hosted or cloud)
+  # Can also be set via FASTGPT_BASE_URL environment variable
   base_url: "https://your-fastgpt.com"
 
+# Security Notes:
+# - Never commit real API keys to version control
+# - Use environment variables for production
+# - Use app-specific keys (not global keys) for chat endpoints
+# - Rotate API keys regularly
+
 # Usage:
-#   result, err := fastgpt.Chat(ctx, "conversation-id", fastgpt.Text("你好"))
+#   # Text only
+#   result, err := fastgpt.Chat(ctx, "conv-id", fastgpt.Text("你好"))
+#
+#   # Text + image
+#   result, err := fastgpt.Chat(ctx, "conv-id",
+#       fastgpt.Text("这个界面怎么操作"),
+#       fastgpt.ImageURL("https://s3.example.com/screenshot.png"),
+#   )
+#
+#   # Check similarity for human handoff
+#   if result.Similarity < 0.7 {
+#       // transfer to human agent
+#   }

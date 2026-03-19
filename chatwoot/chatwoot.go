@@ -85,6 +85,13 @@ func loadConfigFromViper() (*Config, error) {
 		AccountID:    viper.GetInt("chatwoot.account_id"),
 		WebhookToken: viper.GetString("chatwoot.webhook_token"),
 	}
+	// Environment variable fallback
+	if env := os.Getenv("CHATWOOT_API_TOKEN"); env != "" {
+		cfg.APIToken = env
+	}
+	if env := os.Getenv("CHATWOOT_BASE_URL"); env != "" {
+		cfg.BaseURL = env
+	}
 	if cfg.AccountID == 0 {
 		return nil, fmt.Errorf("chatwoot: account_id is required")
 	}
