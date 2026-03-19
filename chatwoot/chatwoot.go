@@ -295,18 +295,21 @@ func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message,
 
 // webhookPayload is the raw Chatwoot webhook JSON structure.
 type webhookPayload struct {
-	Event       string `json:"event"`
-	Content     string `json:"content"`
-	InboxID     int    `json:"inbox_id"`
-	MessageType int    `json:"message_type"`
-	Sender      struct {
+	Event       string          `json:"event"`
+	Content     string          `json:"content"`
+	MessageType json.RawMessage `json:"message_type"` // string ("incoming") or int (0)
+	Inbox       struct {
+		ID int `json:"id"`
+	} `json:"inbox"`
+	Sender struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 		Type string `json:"type"`
 	} `json:"sender"`
 	Conversation struct {
-		ID     int    `json:"id"`
-		Status string `json:"status"`
+		ID      int    `json:"id"`
+		Status  string `json:"status"`
+		InboxID int    `json:"inbox_id"`
 	} `json:"conversation"`
 	Attachments []struct {
 		FileType string `json:"file_type"`
@@ -323,15 +326,50 @@ var messageTypeMap = map[int]string{
 	2: "activity",
 }
 
+// parseMessageType handles message_type as string or int.
+func parseMessageType(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "unknown"
+	}
+	// Try string first (webhook sends "incoming"/"outgoing")
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	// Try int (Messages API sends 0/1/2)
+	var i int
+	if json.Unmarshal(raw, &i) == nil {
+		if name, ok := messageTypeMap[i]; ok {
+			return name
+		}
+		return fmt.Sprintf("unknown(%d)", i)
+	}
+	return "unknown"
+}
+
 func parseWebhook(body []byte) (Event, error) {
 	var wp webhookPayload
 	if err := json.Unmarshal(body, &wp); err != nil {
 		return Event{}, fmt.Errorf("chatwoot: parse webhook error: %w", err)
 	}
 
-	msgType := messageTypeMap[wp.MessageType]
-	if msgType == "" {
-		msgType = fmt.Sprintf("unknown(%d)", wp.MessageType)
+	msgType := parseMessageType(wp.MessageType)
+
+	// InboxID: prefer inbox.id, fallback to conversation.inbox_id
+	inboxID := wp.Inbox.ID
+	if inboxID == 0 {
+		inboxID = wp.Conversation.InboxID
+	}
+
+	// Sender type: if missing, infer from message type
+	senderType := wp.Sender.Type
+	if senderType == "" {
+		switch msgType {
+		case "incoming":
+			senderType = "contact"
+		case "outgoing":
+			senderType = "user"
+		}
 	}
 
 	var attachments []Attachment
@@ -348,12 +386,12 @@ func parseWebhook(body []byte) (Event, error) {
 		EventType:      wp.Event,
 		Content:        wp.Content,
 		ConversationID: wp.Conversation.ID,
-		InboxID:        wp.InboxID,
+		InboxID:        inboxID,
 		MessageType:    msgType,
 		Sender: Sender{
 			ID:   wp.Sender.ID,
 			Name: wp.Sender.Name,
-			Type: wp.Sender.Type,
+			Type: senderType,
 		},
 		Conversation: Conversation{
 			Status: wp.Conversation.Status,

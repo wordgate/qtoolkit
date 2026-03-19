@@ -375,6 +375,75 @@ func TestReply_CorrectURL(t *testing.T) {
 	}
 }
 
+func TestParseWebhook_RealPayloadFormat(t *testing.T) {
+	// Matches actual Chatwoot webhook format: string message_type, nested inbox, no sender.type
+	payload := `{
+		"event": "message_created",
+		"content": "哈口",
+		"message_type": "incoming",
+		"inbox": {"id": 5, "name": "K2"},
+		"sender": {"id": 1, "name": "User"},
+		"conversation": {"id": 269, "status": "open", "inbox_id": 5}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.MessageType != "incoming" {
+		t.Errorf("MessageType = %q, want %q", event.MessageType, "incoming")
+	}
+	if event.InboxID != 5 {
+		t.Errorf("InboxID = %d, want 5", event.InboxID)
+	}
+	// Sender type inferred from message_type when missing
+	if event.Sender.Type != "contact" {
+		t.Errorf("Sender.Type = %q, want %q (inferred from incoming)", event.Sender.Type, "contact")
+	}
+}
+
+func TestParseWebhook_InboxIDFallback(t *testing.T) {
+	// No inbox field, fallback to conversation.inbox_id
+	payload := `{
+		"event": "message_created",
+		"content": "test",
+		"message_type": "outgoing",
+		"sender": {"id": 1, "name": "Agent"},
+		"conversation": {"id": 42, "status": "open", "inbox_id": 7}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.InboxID != 7 {
+		t.Errorf("InboxID = %d, want 7 (from conversation.inbox_id)", event.InboxID)
+	}
+	// Sender type inferred as "user" for outgoing
+	if event.Sender.Type != "user" {
+		t.Errorf("Sender.Type = %q, want %q (inferred from outgoing)", event.Sender.Type, "user")
+	}
+}
+
+func TestParseWebhook_SenderTypePreserved(t *testing.T) {
+	// When sender.type is present, it should NOT be overwritten
+	payload := `{
+		"event": "message_created",
+		"content": "bot reply",
+		"message_type": "outgoing",
+		"sender": {"id": 1, "name": "Bot", "type": "agent_bot"},
+		"conversation": {"id": 42, "status": "open"}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.Sender.Type != "agent_bot" {
+		t.Errorf("Sender.Type = %q, want %q (preserved from payload)", event.Sender.Type, "agent_bot")
+	}
+}
+
 func TestGetMessages_Success(t *testing.T) {
 	resetState()
 
