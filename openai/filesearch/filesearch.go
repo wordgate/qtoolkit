@@ -25,10 +25,9 @@ import (
 // Config holds OpenAI file search configuration.
 type Config struct {
 	APIKey         string  `yaml:"api_key"`
-	VectorStoreID  string  `yaml:"vector_store_id"`
-	Model          string  `yaml:"model"`
-	ScoreThreshold float64 `yaml:"score_threshold"`
-	MaxResults     int     `yaml:"max_results"`
+	VectorStoreID string `yaml:"vector_store_id"`
+	Model         string `yaml:"model"`
+	MaxResults    int    `yaml:"max_results"`
 }
 
 // Message represents a conversation message (for history context).
@@ -87,9 +86,8 @@ func loadConfigFromViper() *Config {
 	cfg := &Config{
 		APIKey:         viper.GetString("openai.filesearch.api_key"),
 		VectorStoreID:  viper.GetString("openai.filesearch.vector_store_id"),
-		Model:          viper.GetString("openai.filesearch.model"),
-		ScoreThreshold: viper.GetFloat64("openai.filesearch.score_threshold"),
-		MaxResults:     viper.GetInt("openai.filesearch.max_results"),
+		Model:      viper.GetString("openai.filesearch.model"),
+		MaxResults: viper.GetInt("openai.filesearch.max_results"),
 	}
 	// Cascading fallback for api_key
 	if cfg.APIKey == "" {

@@ -14,9 +14,6 @@ openai:
     # Model for generating answers (default: gpt-4o-mini)
     model: "gpt-4o-mini"
 
-    # Minimum score filter (default: 0.0, no filter)
-    # score_threshold: 0.0
-
     # Max retrieved chunks (default: 5)
     # max_results: 5
 
