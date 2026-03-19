@@ -1,0 +1,13 @@
+# FastGPT Configuration
+# Add to your main config.yml
+
+fastgpt:
+  # Application-specific API key (includes AppId)
+  # Create at: FastGPT Dashboard → App → API Access
+  api_key: "fastgpt-xxxxxxxx"
+
+  # FastGPT server base URL (self-hosted or cloud)
+  base_url: "https://your-fastgpt.com"
+
+# Usage:
+#   result, err := fastgpt.Chat(ctx, "conversation-id", fastgpt.Text("你好"))
