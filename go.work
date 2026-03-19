@@ -21,6 +21,7 @@ use (
 	./log
 	./mail
 	./nextpay
+	./openai/filesearch
 	./redis
 	./slack
 	./unred
