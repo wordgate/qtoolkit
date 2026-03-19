@@ -28,10 +28,7 @@ func TestChat_Success(t *testing.T) {
 			"responseData": []map[string]any{
 				{
 					"moduleType": "datasetSearchNode",
-					"quoteList": []map[string]any{
-						{"score": 0.85},
-						{"score": 0.72},
-					},
+					"similarity": 0.85,
 				},
 			},
 		})

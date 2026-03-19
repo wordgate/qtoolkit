@@ -174,12 +174,8 @@ type chatMessage struct {
 }
 
 type responseData struct {
-	ModuleType string      `json:"moduleType"`
-	QuoteList  []quoteItem `json:"quoteList"`
-}
-
-type quoteItem struct {
-	Score float64 `json:"score"`
+	ModuleType string  `json:"moduleType"`
+	Similarity float64 `json:"similarity"` // dataset search similarity (0-1)
 }
 
 // Chat sends a message to FastGPT and returns the result with similarity score.
@@ -249,14 +245,10 @@ func Chat(ctx context.Context, chatID string, parts ...Part) (Result, error) {
 		Content: chatResp.Choices[0].Message.Content,
 	}
 
-	// Extract max similarity from dataset search nodes
+	// Extract similarity from dataset search node
 	for _, rd := range chatResp.ResponseData {
-		if rd.ModuleType == "datasetSearchNode" {
-			for _, q := range rd.QuoteList {
-				if q.Score > result.Similarity {
-					result.Similarity = q.Score
-				}
-			}
+		if rd.ModuleType == "datasetSearchNode" && rd.Similarity > result.Similarity {
+			result.Similarity = rd.Similarity
 		}
 	}
 
