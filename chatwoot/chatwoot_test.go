@@ -272,3 +272,105 @@ func TestMount_HMACReject(t *testing.T) {
 		t.Errorf("status = %d, want 401", w.Code)
 	}
 }
+
+func TestMount_InvalidJSON(t *testing.T) {
+	resetState()
+	SetConfig(&Config{APIToken: "t", BaseURL: "http://localhost", AccountID: 1})
+
+	handlerCalled := make(chan struct{}, 1)
+
+	r := gin.New()
+	Mount(r, "/webhook", func(ctx context.Context, event Event) {
+		handlerCalled <- struct{}{}
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+
+	// Verify handler was NOT called
+	select {
+	case <-handlerCalled:
+		t.Error("handler should not be called for invalid JSON")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: handler not called
+	}
+}
+
+func TestMount_PanicRecovery(t *testing.T) {
+	resetState()
+	SetConfig(&Config{APIToken: "t", BaseURL: "http://localhost", AccountID: 1})
+
+	r := gin.New()
+	Mount(r, "/webhook", func(ctx context.Context, event Event) {
+		panic("intentional test panic")
+	})
+
+	payload := `{
+		"event": "message_created",
+		"content": "hello",
+		"message_type": 0,
+		"sender": {"id": 1, "name": "User", "type": "contact"},
+		"conversation": {"id": 10, "status": "open"}
+	}`
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	// Verify 200 returned (async, panic happens after response)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+
+	// Sleep briefly to let goroutine run and recover from panic
+	// If the test doesn't crash, panic recovery works correctly
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestParseWebhook_NoAttachments(t *testing.T) {
+	payload := `{
+		"event": "message_created",
+		"content": "hello",
+		"message_type": 0,
+		"sender": {"id": 1, "name": "User", "type": "contact"},
+		"conversation": {"id": 42, "status": "open"}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.Attachments != nil {
+		t.Errorf("Attachments = %v, want nil when no attachments field present", event.Attachments)
+	}
+}
+
+func TestReply_CorrectURL(t *testing.T) {
+	resetState()
+
+	var receivedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "test-token", BaseURL: server.URL, AccountID: 5})
+
+	err := Reply(context.Background(), 123, "test message")
+	if err != nil {
+		t.Fatalf("Reply error: %v", err)
+	}
+
+	want := "/api/v1/accounts/5/conversations/123/messages"
+	if receivedPath != want {
+		t.Errorf("path = %q, want %q", receivedPath, want)
+	}
+}

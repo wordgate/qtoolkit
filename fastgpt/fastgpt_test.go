@@ -259,3 +259,130 @@ func TestChat_NoParts(t *testing.T) {
 		t.Errorf("error = %q, should mention parts", err.Error())
 	}
 }
+
+func TestChat_FileURL(t *testing.T) {
+	resetState()
+
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"role": "assistant", "content": "ok"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIKey: "test-key", BaseURL: server.URL})
+
+	Chat(context.Background(), "conv-1",
+		Text("请查看文件"),
+		FileURL("report.pdf", "https://s3.example.com/report.pdf"),
+	)
+
+	messages := receivedBody["messages"].([]any)
+	msg := messages[0].(map[string]any)
+	content, ok := msg["content"].([]any)
+	if !ok {
+		t.Fatal("content should be an array when file_url part is present")
+	}
+	if len(content) != 2 {
+		t.Fatalf("content length = %d, want 2", len(content))
+	}
+
+	filePart := content[1].(map[string]any)
+	if filePart["type"] != "file_url" {
+		t.Errorf("content[1].type = %q, want %q", filePart["type"], "file_url")
+	}
+	if filePart["name"] != "report.pdf" {
+		t.Errorf("content[1].name = %q, want %q", filePart["name"], "report.pdf")
+	}
+	if filePart["url"] != "https://s3.example.com/report.pdf" {
+		t.Errorf("content[1].url = %q, want %q", filePart["url"], "https://s3.example.com/report.pdf")
+	}
+}
+
+func TestChat_SingleTextIsString(t *testing.T) {
+	resetState()
+
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"role": "assistant", "content": "ok"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIKey: "test-key", BaseURL: server.URL})
+
+	Chat(context.Background(), "conv-1", Text("单条文本消息"))
+
+	messages := receivedBody["messages"].([]any)
+	msg := messages[0].(map[string]any)
+	content, ok := msg["content"].(string)
+	if !ok {
+		t.Fatalf("content should be a plain string for single text part, got %T", msg["content"])
+	}
+	if content != "单条文本消息" {
+		t.Errorf("content = %q, want %q", content, "单条文本消息")
+	}
+}
+
+func TestBuildContent_AllPartTypes(t *testing.T) {
+	parts := []Part{
+		Text("some text"),
+		ImageURL("https://s3.example.com/img.png"),
+		FileURL("doc.pdf", "https://s3.example.com/doc.pdf"),
+	}
+
+	result := buildContent(parts)
+
+	content, ok := result.([]map[string]any)
+	if !ok {
+		t.Fatalf("buildContent returned %T, want []map[string]any", result)
+	}
+	if len(content) != 3 {
+		t.Fatalf("content length = %d, want 3", len(content))
+	}
+
+	// Verify text part
+	if content[0]["type"] != "text" {
+		t.Errorf("content[0].type = %q, want %q", content[0]["type"], "text")
+	}
+	if content[0]["text"] != "some text" {
+		t.Errorf("content[0].text = %q, want %q", content[0]["text"], "some text")
+	}
+
+	// Verify image_url part
+	if content[1]["type"] != "image_url" {
+		t.Errorf("content[1].type = %q, want %q", content[1]["type"], "image_url")
+	}
+	imgURL, ok := content[1]["image_url"].(map[string]string)
+	if !ok {
+		t.Fatalf("content[1].image_url should be map[string]string, got %T", content[1]["image_url"])
+	}
+	if imgURL["url"] != "https://s3.example.com/img.png" {
+		t.Errorf("image_url.url = %q, want %q", imgURL["url"], "https://s3.example.com/img.png")
+	}
+
+	// Verify file_url part
+	if content[2]["type"] != "file_url" {
+		t.Errorf("content[2].type = %q, want %q", content[2]["type"], "file_url")
+	}
+	if content[2]["name"] != "doc.pdf" {
+		t.Errorf("content[2].name = %q, want %q", content[2]["name"], "doc.pdf")
+	}
+	if content[2]["url"] != "https://s3.example.com/doc.pdf" {
+		t.Errorf("content[2].url = %q, want %q", content[2]["url"], "https://s3.example.com/doc.pdf")
+	}
+}
