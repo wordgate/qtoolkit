@@ -444,6 +444,40 @@ func TestParseWebhook_SenderTypePreserved(t *testing.T) {
 	}
 }
 
+func TestParseWebhook_AssigneeID(t *testing.T) {
+	// Unassigned: assignee is null → AssigneeID = 0
+	payload := `{
+		"event": "message_created",
+		"content": "hello",
+		"message_type": "incoming",
+		"sender": {"id": 1, "name": "User"},
+		"conversation": {"id": 42, "status": "open", "meta": {"assignee": null}}
+	}`
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.AssigneeID != 0 {
+		t.Errorf("AssigneeID = %d, want 0 (unassigned)", event.AssigneeID)
+	}
+
+	// Assigned: assignee has id → AssigneeID = agent id
+	payload = `{
+		"event": "message_created",
+		"content": "hello",
+		"message_type": "incoming",
+		"sender": {"id": 1, "name": "User"},
+		"conversation": {"id": 42, "status": "open", "meta": {"assignee": {"id": 7, "name": "Agent"}}}
+	}`
+	event, err = parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if event.AssigneeID != 7 {
+		t.Errorf("AssigneeID = %d, want 7", event.AssigneeID)
+	}
+}
+
 func TestGetMessages_Success(t *testing.T) {
 	resetState()
 

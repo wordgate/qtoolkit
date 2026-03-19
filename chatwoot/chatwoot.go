@@ -43,6 +43,7 @@ type Event struct {
 	Content        string
 	ConversationID int
 	InboxID        int
+	AssigneeID     int    // 0 = unassigned (bot handles), >0 = human agent assigned
 	MessageType    string // "incoming" / "outgoing" / "activity"
 	Sender         Sender
 	Conversation   Conversation
@@ -310,6 +311,11 @@ type webhookPayload struct {
 		ID      int    `json:"id"`
 		Status  string `json:"status"`
 		InboxID int    `json:"inbox_id"`
+		Meta    struct {
+			Assignee *struct {
+				ID int `json:"id"`
+			} `json:"assignee"`
+		} `json:"meta"`
 	} `json:"conversation"`
 	Attachments []struct {
 		FileType string `json:"file_type"`
@@ -361,6 +367,12 @@ func parseWebhook(body []byte) (Event, error) {
 		inboxID = wp.Conversation.InboxID
 	}
 
+	// AssigneeID: from conversation.meta.assignee.id (0 if unassigned/null)
+	var assigneeID int
+	if wp.Conversation.Meta.Assignee != nil {
+		assigneeID = wp.Conversation.Meta.Assignee.ID
+	}
+
 	// Sender type: if missing, infer from message type
 	senderType := wp.Sender.Type
 	if senderType == "" {
@@ -387,6 +399,7 @@ func parseWebhook(body []byte) (Event, error) {
 		Content:        wp.Content,
 		ConversationID: wp.Conversation.ID,
 		InboxID:        inboxID,
+		AssigneeID:     assigneeID,
 		MessageType:    msgType,
 		Sender: Sender{
 			ID:   wp.Sender.ID,
