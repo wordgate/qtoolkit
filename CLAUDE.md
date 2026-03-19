@@ -286,6 +286,47 @@ qtoolkit:
       enabled: false  # 禁用则不编译
 ```
 
+### 🔑 配置单一真理源原则
+
+**强制要求**: 模块配置的唯一入口是 viper（config.yml），禁止在模块内部添加环境变量回退。
+
+#### 为什么
+
+1. **单一真理源** — 配置只有一个地方可以设置，排查问题时不需要猜"这个值是从 config.yml 来的还是环境变量来的"
+2. **qtoolkit 的精髓** — `viper.ReadInConfig()` 一次，所有模块 lazy load 自动就绪，拿来就用
+3. **环境变量是使用者的事** — 如果使用者需要环境变量覆盖，他们可以在自己的应用里用 `viper.AutomaticEnv()` 或 `viper.BindEnv()`，不需要每个模块重复实现
+
+#### 实践要求
+
+```go
+// ❌ 错误：模块内部添加环境变量回退
+func loadConfigFromViper() *Config {
+    cfg := &Config{
+        APIKey: viper.GetString("service.api_key"),
+    }
+    if env := os.Getenv("SERVICE_API_KEY"); env != "" {
+        cfg.APIKey = env  // 引入第二个配置源
+    }
+    return cfg
+}
+
+// ✅ 正确：只从 viper 读取
+func loadConfigFromViper() *Config {
+    return &Config{
+        APIKey: viper.GetString("service.api_key"),
+    }
+}
+```
+
+```yaml
+# ❌ 错误：config template 提及环境变量
+# Can also be set via SERVICE_API_KEY environment variable
+
+# ✅ 正确：config template 只描述 viper 配置
+# API key for the service (required)
+api_key: "YOUR_SERVICE_API_KEY"
+```
+
 ### 🔄 依赖管理规则
 - **核心依赖**: 只在`core/go.mod`中
 - **服务依赖**: 各模块独立管理
