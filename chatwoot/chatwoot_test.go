@@ -374,3 +374,169 @@ func TestReply_CorrectURL(t *testing.T) {
 		t.Errorf("path = %q, want %q", receivedPath, want)
 	}
 }
+
+func TestGetMessages_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %q, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/accounts/1/conversations/42/messages" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if r.Header.Get("api_access_token") != "test-token" {
+			t.Errorf("token = %q", r.Header.Get("api_access_token"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{"content": "third msg", "message_type": 1},
+				{"content": "second msg", "message_type": 0},
+				{"content": "first msg", "message_type": 0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "test-token", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 42, 10)
+	if err != nil {
+		t.Fatalf("GetMessages error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("len = %d, want 3", len(msgs))
+	}
+	// Should be reversed to chronological order
+	if msgs[0].Content != "first msg" || msgs[0].Role != "user" {
+		t.Errorf("msgs[0] = %+v", msgs[0])
+	}
+	if msgs[2].Content != "third msg" || msgs[2].Role != "assistant" {
+		t.Errorf("msgs[2] = %+v", msgs[2])
+	}
+}
+
+func TestGetMessages_WithImages(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{
+					"content": "看这个", "message_type": 0,
+					"attachments": []map[string]any{
+						{"file_type": "image", "data_url": "https://example.com/img.png"},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len = %d, want 1", len(msgs))
+	}
+	if len(msgs[0].Images) != 1 || msgs[0].Images[0] != "https://example.com/img.png" {
+		t.Errorf("Images = %v", msgs[0].Images)
+	}
+}
+
+func TestGetMessages_SkipsActivityAndEmpty(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{"content": "real msg", "message_type": 0},
+				{"content": "activity", "message_type": 2},
+				{"content": "", "message_type": 0},
+				{"content": nil, "message_type": 0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len = %d, want 1 (activity, empty, and null skipped)", len(msgs))
+	}
+}
+
+func TestGetMessages_Limit(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{"content": "msg3", "message_type": 0},
+				{"content": "msg2", "message_type": 0},
+				{"content": "msg1", "message_type": 0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 2)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len = %d, want 2 (limited)", len(msgs))
+	}
+	if msgs[0].Content != "msg2" {
+		t.Errorf("msgs[0].Content = %q, want msg2", msgs[0].Content)
+	}
+	if msgs[1].Content != "msg3" {
+		t.Errorf("msgs[1].Content = %q, want msg3", msgs[1].Content)
+	}
+}
+
+func TestGetMessages_TemplateBotMessages(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{"content": "bot auto-reply", "message_type": 3},
+				{"content": "user question", "message_type": 0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len = %d, want 2", len(msgs))
+	}
+	// Reversed to chronological: user question first, then bot reply
+	if msgs[0].Role != "user" {
+		t.Errorf("msgs[0].Role = %q, want user", msgs[0].Role)
+	}
+	if msgs[1].Role != "assistant" {
+		t.Errorf("msgs[1].Role = %q, want assistant (template/bot)", msgs[1].Role)
+	}
+}

@@ -184,6 +184,114 @@ func Reply(ctx context.Context, conversationID int, text string) error {
 	return nil
 }
 
+// Message represents a conversation message for history retrieval.
+type Message struct {
+	Role    string   // "user" (from contact) / "assistant" (from agent/bot)
+	Content string   // Text content
+	Images  []string // Image attachment URLs
+}
+
+// messageRoleMap maps Chatwoot message_type integers to role strings.
+var messageRoleMap = map[int]string{
+	0: "user",      // incoming (from contact)
+	1: "assistant", // outgoing (from agent/bot)
+	3: "assistant", // template/bot auto-response
+}
+
+// messagesPayload is the Chatwoot messages API response.
+type messagesPayload struct {
+	Payload []messageItem `json:"payload"`
+}
+
+type messageItem struct {
+	Content     *string `json:"content"` // pointer: can be null for image-only messages
+	MessageType int     `json:"message_type"`
+	Attachments []struct {
+		FileType string `json:"file_type"`
+		DataURL  string `json:"data_url"`
+	} `json:"attachments"`
+}
+
+// GetMessages fetches recent messages from a Chatwoot conversation.
+// limit controls max messages returned. Messages are returned in chronological order.
+// Maps incoming messages to Role:"user", outgoing/template to Role:"assistant".
+// Extracts image attachment URLs into the Images field.
+// Skips activity messages and messages with no content and no images.
+func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message, error) {
+	cfg := getConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("chatwoot: not configured")
+	}
+
+	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages",
+		cfg.BaseURL, cfg.AccountID, conversationID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("chatwoot: request error: %w", err)
+	}
+	req.Header.Set("api_access_token", cfg.APIToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("chatwoot: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("chatwoot: status %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	var msgResp messagesPayload
+	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+		return nil, fmt.Errorf("chatwoot: decode error: %w", err)
+	}
+
+	var messages []Message
+	for _, item := range msgResp.Payload {
+		role, ok := messageRoleMap[item.MessageType]
+		if !ok {
+			continue // skip activity and unknown types
+		}
+
+		var images []string
+		for _, att := range item.Attachments {
+			if att.FileType == "image" {
+				images = append(images, att.DataURL)
+			}
+		}
+
+		// Handle null content (image-only messages)
+		content := ""
+		if item.Content != nil {
+			content = *item.Content
+		}
+
+		// Skip messages with no content and no images
+		if content == "" && len(images) == 0 {
+			continue
+		}
+
+		messages = append(messages, Message{
+			Role:    role,
+			Content: content,
+			Images:  images,
+		})
+	}
+
+	// Payload is newest first — reverse to chronological order
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	// Apply limit (keep most recent N)
+	if limit > 0 && len(messages) > limit {
+		messages = messages[len(messages)-limit:]
+	}
+
+	return messages, nil
+}
+
 // webhookPayload is the raw Chatwoot webhook JSON structure.
 type webhookPayload struct {
 	Event       string `json:"event"`
