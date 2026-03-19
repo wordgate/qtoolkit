@@ -1,0 +1,21 @@
+# Chatwoot Configuration
+# Add to your main config.yml
+
+chatwoot:
+  # API access token (from Chatwoot profile settings)
+  api_token: "YOUR_CHATWOOT_API_TOKEN"
+
+  # Chatwoot server base URL
+  base_url: "https://your-chatwoot.com"
+
+  # Account ID (required)
+  account_id: 1
+
+  # Webhook token for HMAC signature verification (optional)
+  # Set in Chatwoot: Settings → Integrations → Webhooks
+  # webhook_token: "YOUR_WEBHOOK_SECRET"
+
+# Usage:
+#   chatwoot.Mount(r, "/webhook", func(ctx context.Context, event chatwoot.Event) {
+#       chatwoot.Reply(ctx, event.ConversationID, "Hello!")
+#   })
