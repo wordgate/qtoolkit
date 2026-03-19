@@ -42,6 +42,7 @@ type Event struct {
 	EventType      string
 	Content        string
 	ConversationID int
+	InboxID        int
 	MessageType    string // "incoming" / "outgoing" / "activity"
 	Sender         Sender
 	Conversation   Conversation
@@ -296,6 +297,7 @@ func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message,
 type webhookPayload struct {
 	Event       string `json:"event"`
 	Content     string `json:"content"`
+	InboxID     int    `json:"inbox_id"`
 	MessageType int    `json:"message_type"`
 	Sender      struct {
 		ID   int    `json:"id"`
@@ -346,6 +348,7 @@ func parseWebhook(body []byte) (Event, error) {
 		EventType:      wp.Event,
 		Content:        wp.Content,
 		ConversationID: wp.Conversation.ID,
+		InboxID:        wp.InboxID,
 		MessageType:    msgType,
 		Sender: Sender{
 			ID:   wp.Sender.ID,
