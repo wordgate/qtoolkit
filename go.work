@@ -13,6 +13,7 @@ use (
 	./aws/ssm
 	./chatwoot
 	./chatwoot/calcom
+	./chatwoot/meet
 	./db
 	./deepl
 	./exchange

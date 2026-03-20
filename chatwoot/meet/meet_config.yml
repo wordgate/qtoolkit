@@ -1,0 +1,30 @@
+# Meet (Video Meeting) Configuration Template
+# Add this to your main config.yml file
+
+chatwoot:
+  meet:
+    # LiveKit Cloud connection
+    livekit:
+      # LiveKit server URL (required)
+      url: "wss://your-project.livekit.cloud"
+      # API key (required)
+      api_key: "YOUR_LIVEKIT_API_KEY"
+      # API secret (required)
+      api_secret: "YOUR_LIVEKIT_API_SECRET"
+
+    # Meeting link validity period (default: 24h)
+    # token_expiry: "24h"
+
+    # Maximum room duration, maps to LiveKit MaxDuration (default: 60m)
+    # room_timeout: "60m"
+
+    # Base URL for generating meeting links (required)
+    base_url: "https://your-domain.com"
+
+    # Slack channel for agent notifications (optional)
+    # slack_channel: "support"
+
+# Security Notes:
+# - Never commit real LiveKit credentials to version control
+# - Meeting tokens are generated using crypto/rand (32 bytes)
+# - Tokens are single-use and expire with the schedule
