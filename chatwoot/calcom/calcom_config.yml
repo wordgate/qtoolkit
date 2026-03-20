@@ -3,9 +3,6 @@
 
 chatwoot:
   calcom:
-    # Cal.com API base URL (default: https://api.cal.com/v2)
-    # base_url: "https://api.cal.com/v2"
-
     # Webhook signing secret for signature verification (required)
     webhook_secret: "YOUR_CALCOM_WEBHOOK_SECRET"
 

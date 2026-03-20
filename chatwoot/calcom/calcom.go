@@ -27,7 +27,6 @@ var (
 )
 
 type Config struct {
-	BaseURL       string `yaml:"base_url"`
 	WebhookSecret string `yaml:"webhook_secret"`
 }
 
@@ -39,11 +38,7 @@ var (
 
 func loadConfigFromViper() (*Config, error) {
 	cfg := &Config{
-		BaseURL:       viper.GetString("chatwoot.calcom.base_url"),
 		WebhookSecret: viper.GetString("chatwoot.calcom.webhook_secret"),
-	}
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://api.cal.com/v2"
 	}
 	if cfg.WebhookSecret == "" {
 		return nil, fmt.Errorf("chatwoot.calcom.webhook_secret is required")

@@ -199,6 +199,11 @@ func handleMeetPage() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		cfg := getConfig()
 
+		if cfg == nil {
+			renderMeetPage(c, meetData{Error: "系统配置错误，请联系客服。"})
+			return
+		}
+
 		schedule, err := getScheduleByToken(ctx, token)
 		if err != nil {
 			renderMeetPage(c, meetData{Error: "链接无效或已过期，请联系客服。"})

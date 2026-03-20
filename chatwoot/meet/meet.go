@@ -234,7 +234,7 @@ func getScheduleByToken(ctx context.Context, token string) (*Schedule, error) {
 // deleteSchedule removes a schedule and all reverse-lookup keys from Redis.
 func deleteSchedule(ctx context.Context, s *Schedule) error {
 	rds := qtredis.Client()
-	keys := []string{scheduleKey(s.ID), tokenKey(s.CustomerToken), tokenKey(s.AgentToken)}
+	keys := []string{scheduleKey(s.ID), tokenKey(s.CustomerToken), tokenKey(s.AgentToken), activeKey(s.ID)}
 	if s.CalcomBookingID > 0 {
 		keys = append(keys, bookingKey(s.CalcomBookingID))
 	}
@@ -292,12 +292,3 @@ func tryActivate(ctx context.Context, s *Schedule, ttl time.Duration) (bool, err
 	return ok, nil
 }
 
-// Ensure unexported functions are referenced to avoid "declared and not used" errors in tests.
-var _ = getConfig
-var _ = resetState
-var _ = saveSchedule
-var _ = getScheduleByToken
-var _ = deleteSchedule
-var _ = findScheduleByBookingID
-var _ = updateScheduleTime
-var _ = tryActivate
