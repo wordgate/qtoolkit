@@ -1,4 +1,4 @@
-go 1.24.0
+go 1.25.0
 
 use (
 	./ai
@@ -12,6 +12,8 @@ use (
 	./aws/sqs
 	./aws/ssm
 	./chatwoot
+	./chatwoot/calcom
+	./chatwoot/meet
 	./db
 	./deepl
 	./exchange

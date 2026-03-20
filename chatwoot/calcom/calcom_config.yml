@@ -1,0 +1,12 @@
+# Cal.com Configuration Template
+# Add this to your main config.yml file
+
+chatwoot:
+  calcom:
+    # Webhook signing secret for signature verification (required)
+    webhook_secret: "YOUR_CALCOM_WEBHOOK_SECRET"
+
+# Security Notes:
+# - Never commit real credentials to version control
+# - The webhook_secret is used to verify HMAC-SHA256 signatures
+#   on incoming webhooks (header: X-Cal-Signature-256)
