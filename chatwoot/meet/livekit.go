@@ -48,7 +48,7 @@ func createParticipantToken(roomName, identity, name string) (string, error) {
 	at.SetIdentity(identity).
 		SetName(name).
 		SetValidFor(cfg.TokenExpiry).
-		AddGrant(grant)
+		SetVideoGrant(grant)
 
 	return at.ToJWT()
 }
