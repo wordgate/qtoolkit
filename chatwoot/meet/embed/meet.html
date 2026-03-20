@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>视频会议</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #fff; height: 100vh; display: flex; flex-direction: column; }
+.wechat-guide { display: none; text-align: center; padding: 40px 20px; }
+.wechat-guide h2 { margin-bottom: 20px; }
+.wechat-guide p { color: #aaa; line-height: 1.8; font-size: 16px; }
+.waiting { display: none; text-align: center; padding: 40px 20px; }
+.waiting h2 { margin-bottom: 10px; }
+.waiting .countdown { font-size: 48px; font-weight: bold; margin: 20px 0; color: #4ecdc4; }
+.waiting p { color: #aaa; }
+.video-container { display: none; flex: 1; position: relative; background: #000; }
+#remote-video { width: 100%; height: 100%; }
+#remote-video video { width: 100%; height: 100%; object-fit: cover; }
+#local-video { position: absolute; bottom: 80px; right: 16px; width: 120px; height: 160px; border-radius: 8px; overflow: hidden; border: 2px solid #fff; }
+#local-video video { width: 100%; height: 100%; object-fit: cover; }
+.no-remote { display: flex; align-items: center; justify-content: center; font-size: 18px; color: #aaa; height: 100%; }
+.controls { display: none; justify-content: center; gap: 20px; padding: 16px; background: rgba(0,0,0,0.8); }
+.controls button {
+    width: 56px; height: 56px; border-radius: 50%; border: none;
+    font-size: 24px; cursor: pointer; color: #fff; background: #333;
+}
+.controls button:active { opacity: 0.7; }
+.controls button.active { background: #e74c3c; }
+.controls button.hangup { background: #e74c3c; }
+.error-page, .ended-page { display: none; text-align: center; padding: 40px 20px; }
+.error-page h2 { color: #e74c3c; margin-bottom: 10px; }
+.ended-page h2 { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="wechat-guide" id="wechat-guide">
+  <h2>请在浏览器中打开</h2>
+  <p>当前环境不支持视频通话<br>请点击右上角 <strong>⋯</strong><br>选择「在默认浏览器中打开」</p>
+</div>
+<div class="waiting" id="waiting">
+  <h2>视频会议</h2>
+  <div class="countdown" id="countdown"></div>
+  <p>会议将在预约时间开始</p>
+</div>
+<div class="video-container" id="video-container">
+  <div id="remote-video"><div class="no-remote" id="no-remote">等待对方加入...</div></div>
+  <div id="local-video"></div>
+</div>
+<div class="controls" id="controls">
+  <button id="btn-mic" title="静音">🎤</button>
+  <button id="btn-cam" title="摄像头">📷</button>
+  <button id="btn-hangup" class="hangup" title="挂断">📞</button>
+</div>
+<div class="error-page" id="error-page">
+  <h2>无法加入会议</h2>
+  <p id="error-msg">链接无效或已过期，请联系客服。</p>
+</div>
+<div class="ended-page" id="ended-page">
+  <h2>会议已结束</h2>
+  <p>感谢您的参与</p>
+</div>
+<script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+<script id="meet-data" type="application/json">{{.DataJSON}}</script>
+<script>
+(function() {
+  var DATA = JSON.parse(document.getElementById('meet-data').textContent);
+  if (DATA.error) {
+    document.getElementById('error-page').style.display = 'block';
+    document.getElementById('error-msg').textContent = DATA.error;
+    return;
+  }
+  var ua = navigator.userAgent;
+  var isWeChat = /MicroMessenger/i.test(ua);
+  if (isWeChat && typeof RTCPeerConnection === 'undefined') {
+    document.getElementById('wechat-guide').style.display = 'block';
+    return;
+  }
+  var scheduledAt = new Date(DATA.scheduledAt);
+  var now = new Date();
+  var diff = scheduledAt.getTime() - now.getTime();
+  if (diff > 5 * 60 * 1000) {
+    showWaiting(scheduledAt);
+    return;
+  }
+  startMeeting();
+  function showWaiting(target) {
+    var el = document.getElementById('waiting');
+    var cd = document.getElementById('countdown');
+    el.style.display = 'block';
+    var timer = setInterval(function() {
+      var remain = target.getTime() - Date.now();
+      if (remain <= 5 * 60 * 1000) {
+        clearInterval(timer);
+        el.style.display = 'none';
+        startMeeting();
+        return;
+      }
+      var h = Math.floor(remain / 3600000);
+      var m = Math.floor((remain % 3600000) / 60000);
+      var s = Math.floor((remain % 60000) / 1000);
+      cd.textContent = (h > 0 ? h + ':' : '') +
+        String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }, 1000);
+  }
+  function startMeeting() {
+    var videoContainer = document.getElementById('video-container');
+    var controls = document.getElementById('controls');
+    videoContainer.style.display = 'flex';
+    controls.style.display = 'flex';
+    var room = new LivekitClient.Room();
+    var micEnabled = true;
+    var camEnabled = true;
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, function(track, pub, participant) {
+      var el = track.attach();
+      if (track.kind === 'video') {
+        document.getElementById('no-remote').style.display = 'none';
+        document.getElementById('remote-video').appendChild(el);
+      } else {
+        document.getElementById('remote-video').appendChild(el);
+      }
+    });
+    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, function(track) {
+      track.detach().forEach(function(el) { el.remove(); });
+    });
+    room.on(LivekitClient.RoomEvent.Disconnected, function() {
+      videoContainer.style.display = 'none';
+      controls.style.display = 'none';
+      document.getElementById('ended-page').style.display = 'block';
+    });
+    room.connect(DATA.serverURL, DATA.token)
+      .then(function() {
+        return room.localParticipant.enableCameraAndMicrophone();
+      })
+      .then(function() {
+        room.localParticipant.videoTrackPublications.forEach(function(pub) {
+          if (pub.track) {
+            document.getElementById('local-video').appendChild(pub.track.attach());
+          }
+        });
+      })
+      .catch(function(err) {
+        videoContainer.style.display = 'none';
+        controls.style.display = 'none';
+        document.getElementById('error-page').style.display = 'block';
+        document.getElementById('error-msg').textContent = '连接失败: ' + err.message;
+      });
+    document.getElementById('btn-mic').addEventListener('click', function() {
+      micEnabled = !micEnabled;
+      room.localParticipant.setMicrophoneEnabled(micEnabled);
+      this.classList.toggle('active', !micEnabled);
+    });
+    document.getElementById('btn-cam').addEventListener('click', function() {
+      camEnabled = !camEnabled;
+      room.localParticipant.setCameraEnabled(camEnabled);
+      this.classList.toggle('active', !camEnabled);
+    });
+    document.getElementById('btn-hangup').addEventListener('click', function() {
+      room.disconnect();
+    });
+  }
+})();
+</script>
+</body>
+</html>

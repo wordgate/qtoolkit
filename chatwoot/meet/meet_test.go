@@ -1,8 +1,15 @@
 package meet
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	qtredis "github.com/wordgate/qtoolkit/redis"
 )
 
 func TestGenerateToken(t *testing.T) {
@@ -61,5 +68,48 @@ func TestCreateParticipantToken(t *testing.T) {
 	}
 	if token == "" {
 		t.Error("participant token is empty")
+	}
+}
+
+func requireRedis(t *testing.T) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Skip("Redis not available, skipping integration test")
+		}
+	}()
+	ctx := context.Background()
+	if err := qtredis.Client().Ping(ctx).Err(); err != nil {
+		t.Skip("Redis not available, skipping integration test")
+	}
+}
+
+func TestHandleMeetPage_InvalidToken(t *testing.T) {
+	requireRedis(t)
+	resetState()
+	SetConfig(&Config{
+		LiveKit: LiveKitConfig{
+			URL:       "wss://test.livekit.cloud",
+			APIKey:    "test-key",
+			APISecret: "test-secret-long-enough-for-hmac-signing",
+		},
+		TokenExpiry: 24 * time.Hour,
+		RoomTimeout: 60 * time.Minute,
+		BaseURL:     "https://example.com",
+	})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	Mount(router, "/meet", nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/meet/invalid-token-here", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "链接无效") {
+		t.Error("response should contain error message for invalid token")
 	}
 }

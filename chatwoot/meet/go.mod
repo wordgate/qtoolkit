@@ -3,12 +3,17 @@ module github.com/wordgate/qtoolkit/chatwoot/meet
 go 1.25.0
 
 require (
+	github.com/gin-gonic/gin v1.11.0
 	github.com/livekit/protocol v1.45.1
 	github.com/livekit/server-sdk-go/v2 v2.13.3
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/spf13/viper v1.21.0
+	github.com/wordgate/qtoolkit/chatwoot/calcom v0.0.0
 	github.com/wordgate/qtoolkit/redis v1.5.22
+	github.com/wordgate/qtoolkit/slack v1.5.22
 )
+
+replace github.com/wordgate/qtoolkit/chatwoot/calcom => ../calcom
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
@@ -29,7 +34,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/gammazero/deque v1.2.1 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
-	github.com/gin-gonic/gin v1.11.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
