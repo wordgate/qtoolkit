@@ -12,6 +12,7 @@ use (
 	./aws/sqs
 	./aws/ssm
 	./chatwoot
+	./chatwoot/calcom
 	./db
 	./deepl
 	./exchange
