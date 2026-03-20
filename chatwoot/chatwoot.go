@@ -39,15 +39,24 @@ type Config struct {
 
 // Event represents a Chatwoot webhook event.
 type Event struct {
-	EventType      string
-	Content        string
-	ConversationID int
-	InboxID        int
-	AssigneeID     int    // 0 = unassigned (bot handles), >0 = human agent assigned
-	MessageType    string // "incoming" / "outgoing" / "activity"
-	Sender         Sender
-	Conversation   Conversation
-	Attachments    []Attachment
+	EventType       string
+	Content         string
+	ContentType     string // "text", "input_select", "cards", etc.
+	ConversationID  int
+	MessageID       int
+	InboxID         int
+	AssigneeID      int    // 0 = unassigned (bot handles), >0 = human agent assigned
+	MessageType     string // "incoming" / "outgoing" / "activity"
+	Sender          Sender
+	Conversation    Conversation
+	Attachments     []Attachment
+	SubmittedValues []SubmittedValue // populated on message_updated for interactive messages
+}
+
+// SubmittedValue represents a user's selection from an interactive message.
+type SubmittedValue struct {
+	Title string
+	Value string
 }
 
 // Sender represents the message sender.
@@ -186,6 +195,124 @@ func Reply(ctx context.Context, conversationID int, text string) error {
 	return nil
 }
 
+// Option represents a selectable option in an input_select message.
+type Option struct {
+	Title string `json:"title"`
+	Value string `json:"value"`
+}
+
+// NewOption creates a selectable option with display title and callback value.
+func NewOption(title, value string) Option {
+	return Option{Title: title, Value: value}
+}
+
+// SendOptions sends an interactive option-button message.
+// Users see clickable buttons; clicking triggers a message_updated webhook
+// with the selected value in Event.SubmittedValues.
+func SendOptions(ctx context.Context, conversationID int, text string, options ...Option) error {
+	if len(options) == 0 {
+		return fmt.Errorf("chatwoot: at least one option is required")
+	}
+	return sendInteractive(ctx, conversationID, text, "input_select", map[string]any{
+		"items": options,
+	})
+}
+
+// CardAction represents a link button on a card.
+type CardAction struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+	URI  string `json:"uri"`
+}
+
+// Card represents a rich card with optional image, description, and link actions.
+type Card struct {
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitempty"`
+	MediaURL    string       `json:"media_url,omitempty"`
+	Actions     []CardAction `json:"actions"`
+}
+
+// NewCard creates a card builder. Chain Desc(), Image(), and Link() to configure it.
+func NewCard(title string) *Card {
+	return &Card{Title: title}
+}
+
+// Desc sets the card description.
+func (c *Card) Desc(description string) *Card {
+	c.Description = description
+	return c
+}
+
+// Image sets the card image URL.
+func (c *Card) Image(url string) *Card {
+	c.MediaURL = url
+	return c
+}
+
+// Link adds a link button to the card.
+func (c *Card) Link(text, url string) *Card {
+	c.Actions = append(c.Actions, CardAction{Type: "link", Text: text, URI: url})
+	return c
+}
+
+// SendCards sends a rich card message with images, descriptions, and link buttons.
+// Each card must have at least one Link action (enforced by Chatwoot).
+func SendCards(ctx context.Context, conversationID int, text string, cards ...Card) error {
+	if len(cards) == 0 {
+		return fmt.Errorf("chatwoot: at least one card is required")
+	}
+	for i, card := range cards {
+		if len(card.Actions) == 0 {
+			return fmt.Errorf("chatwoot: card %d (%q) must have at least one Link action", i, card.Title)
+		}
+	}
+	return sendInteractive(ctx, conversationID, text, "cards", map[string]any{
+		"items": cards,
+	})
+}
+
+func sendInteractive(ctx context.Context, conversationID int, text, contentType string, contentAttrs map[string]any) error {
+	cfg := getConfig()
+	if cfg == nil {
+		return fmt.Errorf("chatwoot: not configured")
+	}
+
+	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages",
+		cfg.BaseURL, cfg.AccountID, conversationID)
+
+	payload := map[string]any{
+		"content":             text,
+		"content_type":        contentType,
+		"content_attributes":  contentAttrs,
+		"message_type":        "outgoing",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("chatwoot: marshal error: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("chatwoot: request error: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api_access_token", cfg.APIToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("chatwoot: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("chatwoot: status %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 // Message represents a conversation message for history retrieval.
 type Message struct {
 	Role    string   // "user" (from contact) / "assistant" (from agent/bot)
@@ -206,6 +333,7 @@ type messagesPayload struct {
 }
 
 type messageItem struct {
+	ID          int     `json:"id"`
 	Content     *string `json:"content"` // pointer: can be null for image-only messages
 	MessageType int     `json:"message_type"`
 	Attachments []struct {
@@ -214,44 +342,72 @@ type messageItem struct {
 	} `json:"attachments"`
 }
 
-// GetMessages fetches recent messages from a Chatwoot conversation.
-// limit controls max messages returned. Messages are returned in chronological order.
-// Maps incoming messages to Role:"user", outgoing/template to Role:"assistant".
-// Extracts image attachment URLs into the Images field.
-// Skips activity messages and messages with no content and no images.
+// GetMessages fetches messages from a Chatwoot conversation with automatic pagination.
+// It paginates backwards through history using the `before` cursor until all messages
+// are retrieved. limit controls max messages returned (0 = all). Messages are returned
+// in chronological order.
 func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message, error) {
 	cfg := getConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("chatwoot: not configured")
 	}
 
-	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages",
+	baseURL := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages",
 		cfg.BaseURL, cfg.AccountID, conversationID)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("chatwoot: request error: %w", err)
-	}
-	req.Header.Set("api_access_token", cfg.APIToken)
+	const chatwootPageSize = 20 // hardcoded in Chatwoot backend
+	var allItems []messageItem
+	beforeID := 0 // 0 means no cursor (first request)
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("chatwoot: request failed: %w", err)
-	}
-	defer resp.Body.Close()
+	for {
+		reqURL := baseURL
+		if beforeID > 0 {
+			reqURL = fmt.Sprintf("%s?before=%d", baseURL, beforeID)
+		}
 
-	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("chatwoot: status %d, body: %s", resp.StatusCode, string(respBody))
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("chatwoot: request error: %w", err)
+		}
+		req.Header.Set("api_access_token", cfg.APIToken)
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("chatwoot: request failed: %w", err)
+		}
+
+		if resp.StatusCode >= 300 {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("chatwoot: status %d, body: %s", resp.StatusCode, string(respBody))
+		}
+
+		var msgResp messagesPayload
+		if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("chatwoot: decode error: %w", err)
+		}
+		resp.Body.Close()
+
+		if len(msgResp.Payload) == 0 {
+			break
+		}
+
+		// Payload is oldest-first (ascending ID); prepend older pages
+		allItems = append(msgResp.Payload, allItems...)
+
+		// If fewer than page size, we've reached the beginning
+		if len(msgResp.Payload) < chatwootPageSize {
+			break
+		}
+
+		// First element has the smallest ID; use it as the next cursor
+		beforeID = msgResp.Payload[0].ID
 	}
 
-	var msgResp messagesPayload
-	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
-		return nil, fmt.Errorf("chatwoot: decode error: %w", err)
-	}
-
+	// Convert to Message structs
 	var messages []Message
-	for _, item := range msgResp.Payload {
+	for _, item := range allItems {
 		role, ok := messageRoleMap[item.MessageType]
 		if !ok {
 			continue // skip activity and unknown types
@@ -264,13 +420,11 @@ func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message,
 			}
 		}
 
-		// Handle null content (image-only messages)
 		content := ""
 		if item.Content != nil {
 			content = *item.Content
 		}
 
-		// Skip messages with no content and no images
 		if content == "" && len(images) == 0 {
 			continue
 		}
@@ -282,11 +436,7 @@ func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message,
 		})
 	}
 
-	// Payload is newest first — reverse to chronological order
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-		messages[i], messages[j] = messages[j], messages[i]
-	}
-	// Apply limit (keep most recent N)
+	// allItems is already in chronological order (oldest first); keep most recent N
 	if limit > 0 && len(messages) > limit {
 		messages = messages[len(messages)-limit:]
 	}
@@ -297,9 +447,17 @@ func GetMessages(ctx context.Context, conversationID int, limit int) ([]Message,
 // webhookPayload is the raw Chatwoot webhook JSON structure.
 type webhookPayload struct {
 	Event       string          `json:"event"`
+	ID          int             `json:"id"`
 	Content     string          `json:"content"`
+	ContentType string          `json:"content_type"`
 	MessageType json.RawMessage `json:"message_type"` // string ("incoming") or int (0)
-	Inbox       struct {
+	ContentAttributes struct {
+		SubmittedValues []struct {
+			Title string `json:"title"`
+			Value string `json:"value"`
+		} `json:"submitted_values"`
+	} `json:"content_attributes"`
+	Inbox struct {
 		ID int `json:"id"`
 	} `json:"inbox"`
 	Sender struct {
@@ -394,13 +552,23 @@ func parseWebhook(body []byte) (Event, error) {
 		})
 	}
 
+	var submittedValues []SubmittedValue
+	for _, sv := range wp.ContentAttributes.SubmittedValues {
+		submittedValues = append(submittedValues, SubmittedValue{
+			Title: sv.Title,
+			Value: sv.Value,
+		})
+	}
+
 	return Event{
-		EventType:      wp.Event,
-		Content:        wp.Content,
-		ConversationID: wp.Conversation.ID,
-		InboxID:        inboxID,
-		AssigneeID:     assigneeID,
-		MessageType:    msgType,
+		EventType:       wp.Event,
+		Content:         wp.Content,
+		ContentType:     wp.ContentType,
+		ConversationID:  wp.Conversation.ID,
+		MessageID:       wp.ID,
+		InboxID:         inboxID,
+		AssigneeID:      assigneeID,
+		MessageType:     msgType,
 		Sender: Sender{
 			ID:   wp.Sender.ID,
 			Name: wp.Sender.Name,
@@ -409,7 +577,8 @@ func parseWebhook(body []byte) (Event, error) {
 		Conversation: Conversation{
 			Status: wp.Conversation.Status,
 		},
-		Attachments: attachments,
+		Attachments:     attachments,
+		SubmittedValues: submittedValues,
 	}, nil
 }
 

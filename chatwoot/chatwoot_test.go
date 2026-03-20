@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -495,9 +496,9 @@ func TestGetMessages_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"payload": []map[string]any{
-				{"content": "third msg", "message_type": 1},
-				{"content": "second msg", "message_type": 0},
-				{"content": "first msg", "message_type": 0},
+				{"id": 1, "content": "first msg", "message_type": 0},
+				{"id": 2, "content": "second msg", "message_type": 0},
+				{"id": 3, "content": "third msg", "message_type": 1},
 			},
 		})
 	}))
@@ -512,7 +513,7 @@ func TestGetMessages_Success(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("len = %d, want 3", len(msgs))
 	}
-	// Should be reversed to chronological order
+	// Already in chronological order (oldest first)
 	if msgs[0].Content != "first msg" || msgs[0].Role != "user" {
 		t.Errorf("msgs[0] = %+v", msgs[0])
 	}
@@ -587,9 +588,9 @@ func TestGetMessages_Limit(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"payload": []map[string]any{
-				{"content": "msg3", "message_type": 0},
-				{"content": "msg2", "message_type": 0},
-				{"content": "msg1", "message_type": 0},
+				{"id": 1, "content": "msg1", "message_type": 0},
+				{"id": 2, "content": "msg2", "message_type": 0},
+				{"id": 3, "content": "msg3", "message_type": 0},
 			},
 		})
 	}))
@@ -619,8 +620,8 @@ func TestGetMessages_TemplateBotMessages(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"payload": []map[string]any{
-				{"content": "bot auto-reply", "message_type": 3},
-				{"content": "user question", "message_type": 0},
+				{"id": 1, "content": "user question", "message_type": 0},
+				{"id": 2, "content": "bot auto-reply", "message_type": 3},
 			},
 		})
 	}))
@@ -635,11 +636,330 @@ func TestGetMessages_TemplateBotMessages(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("len = %d, want 2", len(msgs))
 	}
-	// Reversed to chronological: user question first, then bot reply
+	// Chronological: user question first, then bot reply
 	if msgs[0].Role != "user" {
 		t.Errorf("msgs[0].Role = %q, want user", msgs[0].Role)
 	}
 	if msgs[1].Role != "assistant" {
 		t.Errorf("msgs[1].Role = %q, want assistant (template/bot)", msgs[1].Role)
+	}
+}
+
+func TestGetMessages_Pagination(t *testing.T) {
+	resetState()
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		// Mock returns < 20 items, so pagination stops after first page
+		json.NewEncoder(w).Encode(map[string]any{
+			"payload": []map[string]any{
+				{"id": 30, "content": "msg3", "message_type": 0},
+				{"id": 40, "content": "msg4", "message_type": 0},
+				{"id": 50, "content": "msg5", "message_type": 0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 0)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if len(msgs) != 3 {
+		t.Fatalf("len = %d, want 3", len(msgs))
+	}
+	// Already chronological (oldest-first from API)
+	if msgs[0].Content != "msg3" || msgs[1].Content != "msg4" || msgs[2].Content != "msg5" {
+		t.Errorf("wrong order: %v, %v, %v", msgs[0].Content, msgs[1].Content, msgs[2].Content)
+	}
+	if requestCount != 1 {
+		t.Errorf("requestCount = %d, want 1 (single page)", requestCount)
+	}
+}
+
+func TestGetMessages_PaginationFull(t *testing.T) {
+	resetState()
+
+	requestCount := 0
+	// Build a page of items in ascending ID order (oldest-first, matching real API)
+	makePage := func(startID int, count int) []map[string]any {
+		items := make([]map[string]any, count)
+		for i := range count {
+			items[i] = map[string]any{
+				"id":           startID + i,
+				"content":      fmt.Sprintf("msg-%d", startID+i),
+				"message_type": 0,
+			}
+		}
+		return items
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		before := r.URL.Query().Get("before")
+		var payload []map[string]any
+
+		switch before {
+		case "": // page 1: IDs 21..40 (20 items, ascending)
+			payload = makePage(21, 20)
+		case "21": // page 2: IDs 5..20 (16 items, < 20 = last page)
+			payload = makePage(5, 16)
+		default:
+			t.Errorf("unexpected before=%s", before)
+			payload = []map[string]any{}
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{"payload": payload})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	msgs, err := GetMessages(context.Background(), 1, 0)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2", requestCount)
+	}
+	// 20 + 16 = 36 messages total
+	if len(msgs) != 36 {
+		t.Fatalf("len = %d, want 36", len(msgs))
+	}
+	// Chronological order: oldest (ID 5) first, newest (ID 40) last
+	if msgs[0].Content != "msg-5" {
+		t.Errorf("first msg = %q, want msg-5", msgs[0].Content)
+	}
+	if msgs[35].Content != "msg-40" {
+		t.Errorf("last msg = %q, want msg-40", msgs[35].Content)
+	}
+}
+
+func TestSendOptions_Success(t *testing.T) {
+	resetState()
+
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &gotPayload)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":1}`))
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	err := SendOptions(context.Background(), 42, "请选择：",
+		NewOption("技术支持", "support"),
+		NewOption("产品咨询", "inquiry"),
+	)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if gotPayload["content_type"] != "input_select" {
+		t.Errorf("content_type = %v, want input_select", gotPayload["content_type"])
+	}
+	if gotPayload["content"] != "请选择：" {
+		t.Errorf("content = %v", gotPayload["content"])
+	}
+	attrs := gotPayload["content_attributes"].(map[string]any)
+	items := attrs["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("items len = %d, want 2", len(items))
+	}
+	first := items[0].(map[string]any)
+	if first["title"] != "技术支持" || first["value"] != "support" {
+		t.Errorf("item[0] = %v", first)
+	}
+}
+
+func TestSendOptions_NoOptions(t *testing.T) {
+	resetState()
+	SetConfig(&Config{APIToken: "t", BaseURL: "http://localhost", AccountID: 1})
+
+	err := SendOptions(context.Background(), 42, "text")
+	if err == nil || err.Error() != "chatwoot: at least one option is required" {
+		t.Errorf("err = %v, want 'at least one option is required'", err)
+	}
+}
+
+func TestSendCards_Success(t *testing.T) {
+	resetState()
+
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &gotPayload)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":1}`))
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{APIToken: "t", BaseURL: server.URL, AccountID: 1})
+
+	err := SendCards(context.Background(), 42, "推荐：",
+		*NewCard("产品A").Desc("描述A").Image("https://img.com/a.jpg").Link("查看", "https://example.com/a"),
+		*NewCard("产品B").Link("了解更多", "https://example.com/b"),
+	)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if gotPayload["content_type"] != "cards" {
+		t.Errorf("content_type = %v, want cards", gotPayload["content_type"])
+	}
+	attrs := gotPayload["content_attributes"].(map[string]any)
+	items := attrs["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("items len = %d, want 2", len(items))
+	}
+
+	card1 := items[0].(map[string]any)
+	if card1["title"] != "产品A" {
+		t.Errorf("card1 title = %v", card1["title"])
+	}
+	if card1["description"] != "描述A" {
+		t.Errorf("card1 description = %v", card1["description"])
+	}
+	if card1["media_url"] != "https://img.com/a.jpg" {
+		t.Errorf("card1 media_url = %v", card1["media_url"])
+	}
+	actions := card1["actions"].([]any)
+	if len(actions) != 1 {
+		t.Fatalf("card1 actions len = %d", len(actions))
+	}
+	action := actions[0].(map[string]any)
+	if action["type"] != "link" || action["text"] != "查看" || action["uri"] != "https://example.com/a" {
+		t.Errorf("action = %v", action)
+	}
+}
+
+func TestSendCards_NoActions(t *testing.T) {
+	resetState()
+	SetConfig(&Config{APIToken: "t", BaseURL: "http://localhost", AccountID: 1})
+
+	err := SendCards(context.Background(), 42, "text", Card{Title: "No Actions"})
+	if err == nil {
+		t.Fatal("expected error for card without actions")
+	}
+}
+
+func TestParseWebhook_MessageUpdated(t *testing.T) {
+	// Real payload structure from Chatwoot message_updated webhook
+	payload := `{
+		"event": "message_updated",
+		"id": 3002,
+		"content": "测试按钮回调",
+		"content_type": "input_select",
+		"message_type": "outgoing",
+		"content_attributes": {
+			"items": [
+				{"title": "选项A", "value": "option_a"},
+				{"title": "选项B", "value": "option_b"}
+			],
+			"submitted_values": [
+				{"title": "选项A", "value": "option_a"}
+			]
+		},
+		"inbox": {"id": 5},
+		"sender": {"id": 1, "name": "Ruth", "type": "user"},
+		"conversation": {
+			"id": 269,
+			"status": "open",
+			"meta": {"assignee": null}
+		}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if event.EventType != "message_updated" {
+		t.Errorf("EventType = %q, want message_updated", event.EventType)
+	}
+	if event.MessageID != 3002 {
+		t.Errorf("MessageID = %d, want 3002", event.MessageID)
+	}
+	if event.ContentType != "input_select" {
+		t.Errorf("ContentType = %q, want input_select", event.ContentType)
+	}
+	if event.ConversationID != 269 {
+		t.Errorf("ConversationID = %d, want 269", event.ConversationID)
+	}
+	if len(event.SubmittedValues) != 1 {
+		t.Fatalf("SubmittedValues len = %d, want 1", len(event.SubmittedValues))
+	}
+	if event.SubmittedValues[0].Title != "选项A" || event.SubmittedValues[0].Value != "option_a" {
+		t.Errorf("SubmittedValues[0] = %+v", event.SubmittedValues[0])
+	}
+}
+
+func TestParseWebhook_ConversationCreated(t *testing.T) {
+	payload := `{
+		"event": "conversation_created",
+		"content": "",
+		"content_type": "text",
+		"message_type": "incoming",
+		"inbox": {"id": 5},
+		"sender": {"id": 1, "name": "User", "type": "contact"},
+		"conversation": {
+			"id": 300,
+			"status": "open",
+			"meta": {"assignee": null}
+		}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if event.EventType != "conversation_created" {
+		t.Errorf("EventType = %q, want conversation_created", event.EventType)
+	}
+	if event.ConversationID != 300 {
+		t.Errorf("ConversationID = %d, want 300", event.ConversationID)
+	}
+	if len(event.SubmittedValues) != 0 {
+		t.Errorf("SubmittedValues should be empty, got %d", len(event.SubmittedValues))
+	}
+}
+
+func TestParseWebhook_TextMessageHasNoSubmittedValues(t *testing.T) {
+	payload := `{
+		"event": "message_created",
+		"id": 100,
+		"content": "hello",
+		"content_type": "text",
+		"message_type": "incoming",
+		"inbox": {"id": 5},
+		"sender": {"id": 1, "name": "User", "type": "contact"},
+		"conversation": {"id": 42, "status": "open", "meta": {"assignee": null}}
+	}`
+
+	event, err := parseWebhook([]byte(payload))
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if event.ContentType != "text" {
+		t.Errorf("ContentType = %q, want text", event.ContentType)
+	}
+	if event.MessageID != 100 {
+		t.Errorf("MessageID = %d, want 100", event.MessageID)
+	}
+	if len(event.SubmittedValues) != 0 {
+		t.Errorf("SubmittedValues should be empty for text messages")
 	}
 }
