@@ -2,6 +2,7 @@ package meet
 
 import (
 	"testing"
+	"time"
 )
 
 func TestGenerateToken(t *testing.T) {
@@ -38,5 +39,27 @@ func TestGenerateID(t *testing.T) {
 	}
 	if id1 == id2 {
 		t.Error("two generated IDs are identical")
+	}
+}
+
+func TestCreateParticipantToken(t *testing.T) {
+	resetState()
+	SetConfig(&Config{
+		LiveKit: LiveKitConfig{
+			URL:       "wss://test.livekit.cloud",
+			APIKey:    "test-api-key",
+			APISecret: "test-api-secret-that-is-long-enough-for-hmac",
+		},
+		TokenExpiry: 24 * time.Hour,
+		RoomTimeout: 60 * time.Minute,
+		BaseURL:     "https://example.com",
+	})
+
+	token, err := createParticipantToken("test-room", "user-123", "Test User")
+	if err != nil {
+		t.Fatalf("createParticipantToken error: %v", err)
+	}
+	if token == "" {
+		t.Error("participant token is empty")
 	}
 }
