@@ -1,6 +1,6 @@
 module github.com/wordgate/qtoolkit/ai
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/openai/openai-go v0.1.0-alpha.44
@@ -26,7 +26,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

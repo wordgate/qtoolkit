@@ -276,11 +276,15 @@ func updateScheduleTime(ctx context.Context, s *Schedule, newTime time.Time, ttl
 // Also updates the schedule status field in Redis.
 func tryActivate(ctx context.Context, s *Schedule, ttl time.Duration) (bool, error) {
 	rds := qtredis.Client()
-	// SETNX: only succeeds if key does not exist
-	ok, err := rds.SetNX(ctx, activeKey(s.ID), "1", ttl).Result()
-	if err != nil {
-		return false, fmt.Errorf("meet: redis setnx: %w", err)
+	// SET with NX: only succeeds if key does not exist
+	result, err := rds.SetArgs(ctx, activeKey(s.ID), "1", goredis.SetArgs{
+		Mode: "NX",
+		TTL:  ttl,
+	}).Result()
+	if err != nil && err != goredis.Nil {
+		return false, fmt.Errorf("meet: redis set nx: %w", err)
 	}
+	ok := result == "OK"
 	if ok {
 		s.Status = "active"
 		_ = saveSchedule(ctx, s, ttl) // best-effort status update
