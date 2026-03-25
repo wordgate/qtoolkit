@@ -10,6 +10,9 @@ import (
 )
 
 func DbIsDuplicatedErr(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
 	var mysqlErr *mysql.MySQLError
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 		return true
