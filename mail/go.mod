@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/spf13/viper v1.21.0
-	github.com/wordgate/qtoolkit/aws/ses v1.5.24
+	github.com/wordgate/qtoolkit/aws/ses v1.5.25
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
 
