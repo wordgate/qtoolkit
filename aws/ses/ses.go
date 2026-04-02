@@ -23,16 +23,23 @@ type Config struct {
 	DefaultFrom string `yaml:"default_from" json:"default_from"`
 }
 
+// EmailAttachment represents an email attachment
+type EmailAttachment struct {
+	Filename string // Attachment filename
+	Data     []byte // Attachment data
+}
+
 // EmailRequest represents a simplified email sending request
 type EmailRequest struct {
-	From     string   // Sender email (must be verified in SES)
-	To       []string // Recipient email addresses
-	Subject  string   // Email subject
-	BodyText string   // Plain text body (optional if BodyHTML is provided)
-	BodyHTML string   // HTML body (optional if BodyText is provided)
-	ReplyTo  []string // Reply-to addresses (optional)
-	CC       []string // CC addresses (optional)
-	BCC      []string // BCC addresses (optional)
+	From        string            // Sender email (must be verified in SES)
+	To          []string          // Recipient email addresses
+	Subject     string            // Email subject
+	BodyText    string            // Plain text body (optional if BodyHTML is provided)
+	BodyHTML    string            // HTML body (optional if BodyText is provided)
+	ReplyTo     []string          // Reply-to addresses (optional)
+	CC          []string          // CC addresses (optional)
+	BCC         []string          // BCC addresses (optional)
+	Attachments []EmailAttachment // Attachments (optional)
 }
 
 // EmailResponse contains the result of sending an email
@@ -236,6 +243,14 @@ func validateEmailRequest(req *EmailRequest) error {
 	if req.BodyText == "" && req.BodyHTML == "" {
 		return fmt.Errorf("email body (BodyText or BodyHTML) is required")
 	}
+	for _, att := range req.Attachments {
+		if att.Filename == "" {
+			return fmt.Errorf("attachment filename cannot be empty")
+		}
+		if len(att.Data) == 0 {
+			return fmt.Errorf("attachment data cannot be empty")
+		}
+	}
 	return nil
 }
 
@@ -286,6 +301,14 @@ func buildSESv2Input(req *EmailRequest) *sesv2.SendEmailInput {
 			Data:    &req.BodyHTML,
 			Charset: strPtr("UTF-8"),
 		}
+	}
+
+	// Add attachments if provided
+	for _, att := range req.Attachments {
+		input.Content.Simple.Attachments = append(input.Content.Simple.Attachments, types.Attachment{
+			FileName:   strPtr(att.Filename),
+			RawContent: att.Data,
+		})
 	}
 
 	return input
