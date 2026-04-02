@@ -1,7 +1,6 @@
 package mail
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,22 +9,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-type mockSender struct {
-	fn func(msg *Message) error
-}
-
-func (m *mockSender) Send(msg *Message) error {
-	return m.fn(msg)
-}
-
 // 重置测试环境
 func resetMailer() {
 	once = sync.Once{}
 	dialer = nil
 	from = ""
-	providerMux.Lock()
-	provider = nil
-	providerMux.Unlock()
+	useSES = false
 }
 
 func TestSendTextEmail(t *testing.T) {
@@ -268,109 +257,6 @@ func TestCompleteEmailWithAllFeatures(t *testing.T) {
 	}
 }
 
-func TestSendWithProvider(t *testing.T) {
-	resetMailer()
-
-	var called bool
-	var received *Message
-	mock := &mockSender{fn: func(msg *Message) error {
-		called = true
-		received = msg
-		return nil
-	}}
-
-	SetProvider(mock)
-
-	err := Send(&Message{
-		To:      "user@example.com",
-		Subject: "Test",
-		Body:    "Hello",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !called {
-		t.Fatal("provider Send was not called")
-	}
-	if received.To != "user@example.com" {
-		t.Errorf("expected To 'user@example.com', got '%s'", received.To)
-	}
-}
-
-func TestSendWithProviderError(t *testing.T) {
-	resetMailer()
-
-	mock := &mockSender{fn: func(msg *Message) error {
-		return fmt.Errorf("ses: delivery failed")
-	}}
-	SetProvider(mock)
-
-	err := Send(&Message{
-		To:      "user@example.com",
-		Subject: "Test",
-		Body:    "Hello",
-	})
-	if err == nil {
-		t.Fatal("expected error from provider")
-	}
-	if err.Error() != "ses: delivery failed" {
-		t.Errorf("expected 'ses: delivery failed', got '%s'", err.Error())
-	}
-}
-
-func TestSetProviderNilRevertsToSMTP(t *testing.T) {
-	resetMailer()
-
-	var called bool
-	mock := &mockSender{fn: func(msg *Message) error {
-		called = true
-		return nil
-	}}
-
-	SetProvider(mock)
-	SetProvider(nil) // revert
-
-	// Send should attempt SMTP now (will fail because no real SMTP, but should not call mock)
-	_ = Send(&Message{
-		To:      "user@example.com",
-		Subject: "Test",
-		Body:    "Hello",
-	})
-	if called {
-		t.Fatal("provider should not be called after SetProvider(nil)")
-	}
-}
-
-func TestValidationRunsBeforeProvider(t *testing.T) {
-	resetMailer()
-
-	var called bool
-	mock := &mockSender{fn: func(msg *Message) error {
-		called = true
-		return nil
-	}}
-	SetProvider(mock)
-
-	// Missing To
-	err := Send(&Message{Subject: "Test", Body: "Hello"})
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if called {
-		t.Fatal("provider should not be called when validation fails")
-	}
-
-	// Missing Subject
-	called = false
-	err = Send(&Message{To: "user@example.com", Body: "Hello"})
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if called {
-		t.Fatal("provider should not be called when validation fails")
-	}
-}
-
 func TestMailerInitialization(t *testing.T) {
 	viper.Set("mail.send_from", "init@example.com")
 	viper.Set("mail.username", "init@example.com")
@@ -398,5 +284,42 @@ func TestMailerInitialization(t *testing.T) {
 
 	if dialer != firstDialer {
 		t.Error("initMailer should return the same instance (singleton)")
+	}
+}
+
+func TestSendProviderConfig(t *testing.T) {
+	resetMailer()
+	viper.Set("mail.provider", "ses")
+	viper.Set("mail.send_from", "test@example.com")
+
+	initMailer()
+
+	if !useSES {
+		t.Error("useSES should be true when mail.provider is 'ses'")
+	}
+	if from != "test@example.com" {
+		t.Errorf("expected from 'test@example.com', got '%s'", from)
+	}
+	if dialer != nil {
+		t.Error("dialer should be nil when using SES")
+	}
+}
+
+func TestSendProviderDefaultSMTP(t *testing.T) {
+	resetMailer()
+	viper.Set("mail.provider", "")
+	viper.Set("mail.send_from", "test@example.com")
+	viper.Set("mail.username", "test@example.com")
+	viper.Set("mail.password", "testpass")
+	viper.Set("mail.smtp_host", "smtp.example.com")
+	viper.Set("mail.smtp_port", 587)
+
+	initMailer()
+
+	if useSES {
+		t.Error("useSES should be false when mail.provider is empty")
+	}
+	if dialer == nil {
+		t.Error("dialer should be initialized for SMTP")
 	}
 }

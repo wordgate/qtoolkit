@@ -6,31 +6,16 @@ import (
 	"sync"
 
 	"github.com/spf13/viper"
+	"github.com/wordgate/qtoolkit/aws/ses"
 	"gopkg.in/gomail.v2"
 )
 
 var (
-	dialer      *gomail.Dialer
-	from        string
-	once        sync.Once
-	provider    Sender
-	providerMux sync.RWMutex
+	dialer *gomail.Dialer
+	from   string
+	useSES bool
+	once   sync.Once
 )
-
-// Sender defines the interface for sending emails.
-// Implement this interface to use a custom email backend (e.g., AWS SES).
-type Sender interface {
-	Send(msg *Message) error
-}
-
-// SetProvider sets a custom email sender. When set, Send() delegates to it
-// instead of using the built-in SMTP sender. Pass nil to revert to SMTP.
-// Must be called before Send() (typically at application startup).
-func SetProvider(s Sender) {
-	providerMux.Lock()
-	defer providerMux.Unlock()
-	provider = s
-}
 
 // Message 邮件消息
 type Message struct {
@@ -80,19 +65,25 @@ func Send(msg *Message) error {
 		return fmt.Errorf("subject is required")
 	}
 
-	providerMux.RLock()
-	p := provider
-	providerMux.RUnlock()
-	if p != nil {
-		return p.Send(msg)
+	for _, att := range msg.Attachments {
+		if att.Filename == "" {
+			return fmt.Errorf("attachment filename cannot be empty")
+		}
+		if len(att.Data) == 0 {
+			return fmt.Errorf("attachment data cannot be empty")
+		}
+	}
+
+	initMailer()
+
+	if useSES {
+		return sendViaSES(msg)
 	}
 	return sendSMTP(msg)
 }
 
 // sendSMTP sends email via SMTP using gomail (the built-in default).
 func sendSMTP(msg *Message) error {
-	initMailer()
-
 	m := gomail.NewMessage()
 	m.SetHeader("From", from)
 	m.SetHeader("To", msg.To)
@@ -120,16 +111,48 @@ func sendSMTP(msg *Message) error {
 	return dialer.DialAndSend(m)
 }
 
+// sendViaSES sends email via AWS SES.
+func sendViaSES(msg *Message) error {
+	req := &ses.EmailRequest{
+		From:    from,
+		To:      []string{msg.To},
+		Subject: msg.Subject,
+	}
+	if msg.IsHTML {
+		req.BodyHTML = msg.Body
+	} else {
+		req.BodyText = msg.Body
+	}
+	if len(msg.Cc) > 0 {
+		req.CC = msg.Cc
+	}
+	if msg.ReplyTo != "" {
+		req.ReplyTo = []string{msg.ReplyTo}
+	}
+	for _, att := range msg.Attachments {
+		req.Attachments = append(req.Attachments, ses.EmailAttachment{
+			Filename: att.Filename,
+			Data:     att.Data,
+		})
+	}
+	_, err := ses.SendEmail(req)
+	return err
+}
+
 // initMailer 初始化邮件发送器（懒加载）
 func initMailer() {
 	once.Do(func() {
 		from = viper.GetString("mail.send_from")
-		username := viper.GetString("mail.username")
-		password := viper.GetString("mail.password")
-		smtpHost := viper.GetString("mail.smtp_host")
-		smtpPort := viper.GetInt("mail.smtp_port")
+		provider := viper.GetString("mail.provider")
+		useSES = provider == "ses"
 
-		dialer = gomail.NewDialer(smtpHost, smtpPort, username, password)
+		if !useSES {
+			username := viper.GetString("mail.username")
+			password := viper.GetString("mail.password")
+			smtpHost := viper.GetString("mail.smtp_host")
+			smtpPort := viper.GetInt("mail.smtp_port")
+			dialer = gomail.NewDialer(smtpHost, smtpPort, username, password)
+		}
 	})
 }
 
