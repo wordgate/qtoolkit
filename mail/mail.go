@@ -10,10 +10,27 @@ import (
 )
 
 var (
-	dialer *gomail.Dialer
-	from   string
-	once   sync.Once
+	dialer      *gomail.Dialer
+	from        string
+	once        sync.Once
+	provider    Sender
+	providerMux sync.RWMutex
 )
+
+// Sender defines the interface for sending emails.
+// Implement this interface to use a custom email backend (e.g., AWS SES).
+type Sender interface {
+	Send(msg *Message) error
+}
+
+// SetProvider sets a custom email sender. When set, Send() delegates to it
+// instead of using the built-in SMTP sender. Pass nil to revert to SMTP.
+// Must be called before Send() (typically at application startup).
+func SetProvider(s Sender) {
+	providerMux.Lock()
+	defer providerMux.Unlock()
+	provider = s
+}
 
 // Message 邮件消息
 type Message struct {
@@ -56,7 +73,6 @@ type Attachment struct {
 //	    },
 //	})
 func Send(msg *Message) error {
-	// 验证必需字段
 	if msg.To == "" {
 		return fmt.Errorf("recipient (To) is required")
 	}
@@ -64,23 +80,30 @@ func Send(msg *Message) error {
 		return fmt.Errorf("subject is required")
 	}
 
-	// 确保配置已加载
+	providerMux.RLock()
+	p := provider
+	providerMux.RUnlock()
+	if p != nil {
+		return p.Send(msg)
+	}
+	return sendSMTP(msg)
+}
+
+// sendSMTP sends email via SMTP using gomail (the built-in default).
+func sendSMTP(msg *Message) error {
 	initMailer()
 
-	// 创建 gomail 消息
 	m := gomail.NewMessage()
 	m.SetHeader("From", from)
 	m.SetHeader("To", msg.To)
 	m.SetHeader("Subject", msg.Subject)
 
-	// 设置正文
 	contentType := "text/plain"
 	if msg.IsHTML {
 		contentType = "text/html"
 	}
 	m.SetBody(contentType, msg.Body)
 
-	// 设置可选 Header
 	if msg.ReplyTo != "" {
 		m.SetHeader("Reply-To", msg.ReplyTo)
 	}
@@ -88,14 +111,12 @@ func Send(msg *Message) error {
 		m.SetHeader("Cc", msg.Cc...)
 	}
 
-	// 添加附件
 	for _, att := range msg.Attachments {
 		if err := attachBytes(m, att.Filename, att.Data); err != nil {
 			return err
 		}
 	}
 
-	// 发送邮件
 	return dialer.DialAndSend(m)
 }
 
