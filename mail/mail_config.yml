@@ -1,23 +1,25 @@
 # Mail Configuration Template
 # Add this to your main config.yml file
 
-# SMTP provider (default, used when no custom provider is set)
 mail:
-  # Sender email address (required)
+  # Provider: "ses" for AWS SES, or omit/leave empty for SMTP (default)
+  # provider: ses
+
+  # Sender email address (required for both SMTP and SES)
   send_from: YOUR_EMAIL@example.com
 
-  # SMTP credentials
+  # SMTP credentials (only needed when provider is not "ses")
   username: YOUR_EMAIL@example.com
   password: YOUR_EMAIL_PASSWORD
 
-  # SMTP server
+  # SMTP server (only needed when provider is not "ses")
   smtp_host: YOUR_SMTP_HOST        # e.g., smtp.gmail.com
   smtp_port: 465                    # 465 for SSL, 587 for TLS
 
-# To use AWS SES instead of SMTP:
-#   1. Configure aws.ses.* (see aws/ses/ses_config.yml)
-#   2. In your code: mail.SetProvider(ses.NewProvider())
-#   3. Then use mail.Send() as usual — it delegates to SES
+# To use AWS SES:
+#   1. Set mail.provider to "ses"
+#   2. Configure aws.ses.* (see aws/ses/ses_config.yml)
+#   3. Use mail.Send() as usual — it delegates to SES automatically
 
 # Security Notes:
 # - Never commit real credentials to version control
