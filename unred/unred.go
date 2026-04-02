@@ -29,7 +29,7 @@ type Client struct {
 // CreateLinkRequest 创建短链接请求
 type CreateLinkRequest struct {
 	TargetURL string `json:"target_url"`           // 目标 URL
-	ExpireAt  int64  `json:"expire_at,omitempty"`  // 过期时间戳（可选）
+	ExpireAt  int64  `json:"expire_at"`             // 过期时间戳（0 = 不过期）
 }
 
 // CreateLinkResponse 创建短链接响应
