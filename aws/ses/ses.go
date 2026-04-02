@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/spf13/viper"
+	"github.com/wordgate/qtoolkit/mail"
 )
 
 // Config represents SES configuration
@@ -293,6 +294,90 @@ func buildSESv2Input(req *EmailRequest) *sesv2.SendEmailInput {
 // strPtr is a helper function to get a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// Provider implements mail.Sender using AWS SES.
+// Use NewProvider() to create, then pass to mail.SetProvider().
+type Provider struct{}
+
+// NewProvider creates a new SES email provider.
+// SES configuration is loaded from viper on first use (aws.ses.* with aws.* fallback).
+func NewProvider() *Provider {
+	return &Provider{}
+}
+
+// Send implements mail.Sender. It maps mail.Message fields to SES API calls.
+func (p *Provider) Send(msg *mail.Message) error {
+	client, err := getClient()
+	if err != nil {
+		return fmt.Errorf("ses provider: %w", err)
+	}
+
+	configMux.RLock()
+	cfg := globalConfig
+	configMux.RUnlock()
+
+	from := cfg.DefaultFrom
+	if from == "" {
+		return fmt.Errorf("ses provider: aws.ses.default_from is required")
+	}
+
+	input := buildProviderInput(from, msg)
+
+	ctx := context.Background()
+	_, err = client.SendEmail(ctx, input)
+	if err != nil {
+		return fmt.Errorf("ses provider: %w", err)
+	}
+	return nil
+}
+
+// buildProviderInput maps mail.Message to sesv2.SendEmailInput.
+func buildProviderInput(from string, msg *mail.Message) *sesv2.SendEmailInput {
+	input := &sesv2.SendEmailInput{
+		FromEmailAddress: &from,
+		Destination: &types.Destination{
+			ToAddresses: []string{msg.To},
+		},
+		Content: &types.EmailContent{
+			Simple: &types.Message{
+				Subject: &types.Content{
+					Data:    &msg.Subject,
+					Charset: strPtr("UTF-8"),
+				},
+				Body: &types.Body{},
+			},
+		},
+	}
+
+	if msg.IsHTML {
+		input.Content.Simple.Body.Html = &types.Content{
+			Data:    &msg.Body,
+			Charset: strPtr("UTF-8"),
+		}
+	} else {
+		input.Content.Simple.Body.Text = &types.Content{
+			Data:    &msg.Body,
+			Charset: strPtr("UTF-8"),
+		}
+	}
+
+	if len(msg.Cc) > 0 {
+		input.Destination.CcAddresses = msg.Cc
+	}
+
+	if msg.ReplyTo != "" {
+		input.ReplyToAddresses = []string{msg.ReplyTo}
+	}
+
+	for _, att := range msg.Attachments {
+		input.Content.Simple.Attachments = append(input.Content.Simple.Attachments, types.Attachment{
+			FileName:   strPtr(att.Filename),
+			RawContent: att.Data,
+		})
+	}
+
+	return input
 }
 
 // Reset resets the SES client and configuration
