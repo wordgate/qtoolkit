@@ -134,6 +134,208 @@ func TestCacheHashOperations(t *testing.T) {
 	}
 }
 
+func TestCacheGetDel(t *testing.T) {
+	if os.Getenv("REDIS_TEST_SKIP") != "" {
+		t.Skip("Skipping Redis tests (REDIS_TEST_SKIP is set)")
+	}
+
+	setupTestRedis()
+
+	client := Client()
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis not available: %v", err)
+	}
+
+	defer CacheDel("test_getdel")
+
+	// Set a value first
+	if err := CacheSet("test_getdel", "hello", 60); err != nil {
+		t.Fatalf("CacheSet failed: %v", err)
+	}
+
+	// GetDel should return the value and delete it
+	var val string
+	exists, err := CacheGetDel("test_getdel", &val)
+	if err != nil {
+		t.Fatalf("CacheGetDel failed: %v", err)
+	}
+	if !exists {
+		t.Fatal("CacheGetDel: key should exist")
+	}
+	if val != "hello" {
+		t.Errorf("CacheGetDel: expected 'hello', got %q", val)
+	}
+
+	// Key should be gone now
+	exists, err = CacheGet("test_getdel", &val)
+	if err != nil {
+		t.Fatalf("CacheGet after GetDel failed: %v", err)
+	}
+	if exists {
+		t.Fatal("Key should not exist after CacheGetDel")
+	}
+
+	// GetDel on missing key
+	exists, err = CacheGetDel("test_getdel_missing", &val)
+	if err != nil {
+		t.Fatalf("CacheGetDel on missing key failed: %v", err)
+	}
+	if exists {
+		t.Fatal("CacheGetDel on missing key should return false")
+	}
+}
+
+func TestCacheGetEx(t *testing.T) {
+	if os.Getenv("REDIS_TEST_SKIP") != "" {
+		t.Skip("Skipping Redis tests (REDIS_TEST_SKIP is set)")
+	}
+
+	setupTestRedis()
+
+	client := Client()
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis not available: %v", err)
+	}
+
+	defer CacheDel("test_getex")
+
+	// Set a value with short TTL
+	if err := CacheSet("test_getex", "world", 2); err != nil {
+		t.Fatalf("CacheSet failed: %v", err)
+	}
+
+	// GetEx should return value and refresh TTL to 60s
+	var val string
+	exists, err := CacheGetEx("test_getex", &val, 60)
+	if err != nil {
+		t.Fatalf("CacheGetEx failed: %v", err)
+	}
+	if !exists {
+		t.Fatal("CacheGetEx: key should exist")
+	}
+	if val != "world" {
+		t.Errorf("CacheGetEx: expected 'world', got %q", val)
+	}
+
+	// Verify TTL was refreshed (should be > 2s now)
+	ttl := client.TTL(ctx, "test_getex").Val()
+	if ttl < 10*time.Second {
+		t.Errorf("TTL should have been refreshed to ~60s, got %v", ttl)
+	}
+
+	// GetEx on missing key
+	exists, err = CacheGetEx("test_getex_missing", &val, 60)
+	if err != nil {
+		t.Fatalf("CacheGetEx on missing key failed: %v", err)
+	}
+	if exists {
+		t.Fatal("CacheGetEx on missing key should return false")
+	}
+}
+
+func TestCacheHDel(t *testing.T) {
+	if os.Getenv("REDIS_TEST_SKIP") != "" {
+		t.Skip("Skipping Redis tests (REDIS_TEST_SKIP is set)")
+	}
+
+	setupTestRedis()
+
+	client := Client()
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis not available: %v", err)
+	}
+
+	defer CacheDel("test_hdel")
+
+	// Set multiple hash fields
+	if err := CacheHSet("test_hdel", "f1", "v1"); err != nil {
+		t.Fatalf("CacheHSet failed: %v", err)
+	}
+	if err := CacheHSet("test_hdel", "f2", "v2"); err != nil {
+		t.Fatalf("CacheHSet failed: %v", err)
+	}
+	if err := CacheHSet("test_hdel", "f3", "v3"); err != nil {
+		t.Fatalf("CacheHSet failed: %v", err)
+	}
+
+	// Delete one field
+	if err := CacheHDel("test_hdel", "f1"); err != nil {
+		t.Fatalf("CacheHDel failed: %v", err)
+	}
+
+	// f1 should be gone
+	var val string
+	exists, _ := CacheHGet("test_hdel", "f1", &val)
+	if exists {
+		t.Fatal("f1 should not exist after CacheHDel")
+	}
+
+	// Delete multiple fields at once
+	if err := CacheHDel("test_hdel", "f2", "f3"); err != nil {
+		t.Fatalf("CacheHDel multiple failed: %v", err)
+	}
+
+	keys, _ := CacheHKeys("test_hdel")
+	if len(keys) != 0 {
+		t.Errorf("Expected no remaining keys, got %v", keys)
+	}
+}
+
+func TestCacheHGetAll(t *testing.T) {
+	if os.Getenv("REDIS_TEST_SKIP") != "" {
+		t.Skip("Skipping Redis tests (REDIS_TEST_SKIP is set)")
+	}
+
+	setupTestRedis()
+
+	client := Client()
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis not available: %v", err)
+	}
+
+	defer CacheDel("test_hgetall")
+
+	// Empty hash should return empty map
+	result, err := CacheHGetAll[string]("test_hgetall")
+	if err != nil {
+		t.Fatalf("CacheHGetAll on empty hash failed: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("Expected empty map for empty hash, got %v", result)
+	}
+
+	// Set some fields
+	type Item struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	if err := CacheHSet("test_hgetall", "a", Item{Name: "alpha", Count: 1}); err != nil {
+		t.Fatalf("CacheHSet failed: %v", err)
+	}
+	if err := CacheHSet("test_hgetall", "b", Item{Name: "beta", Count: 2}); err != nil {
+		t.Fatalf("CacheHSet failed: %v", err)
+	}
+
+	// Get all with generic type
+	items, err := CacheHGetAll[Item]("test_hgetall")
+	if err != nil {
+		t.Fatalf("CacheHGetAll failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("Expected 2 items, got %d", len(items))
+	}
+	if items["a"].Name != "alpha" || items["a"].Count != 1 {
+		t.Errorf("Unexpected item a: %+v", items["a"])
+	}
+	if items["b"].Name != "beta" || items["b"].Count != 2 {
+		t.Errorf("Unexpected item b: %+v", items["b"])
+	}
+}
+
 func TestDistributedLock(t *testing.T) {
 	if os.Getenv("REDIS_TEST_SKIP") != "" {
 		t.Skip("Skipping Redis tests (REDIS_TEST_SKIP is set)")
