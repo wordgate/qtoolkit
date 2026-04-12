@@ -1,0 +1,15 @@
+# GeoIP Configuration Template
+# Add to your main config.yml file (OPTIONAL - works without any configuration)
+
+# geoip:
+#   # Custom download URL for GeoLite2-Country.mmdb (optional)
+#   # Default: Loyalsoldier/geoip GitHub mirror (updated weekly)
+#   download_url: "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/GeoLite2-Country.mmdb"
+
+# The module automatically:
+# - Downloads GeoLite2-Country database on first use
+# - Caches in OS cache directory (~/.cache/qtoolkit/geoip/ on Linux, ~/Library/Caches/qtoolkit/geoip/ on macOS)
+# - Refreshes every 24 hours
+#
+# Usage:
+#   country, err := geoip.Country("8.8.8.8")  // returns "US"

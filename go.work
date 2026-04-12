@@ -18,6 +18,7 @@ use (
 	./deepl
 	./exchange
 	./fastgpt
+	./geoip
 	./github/issue
 	./godaddy
 	./log
