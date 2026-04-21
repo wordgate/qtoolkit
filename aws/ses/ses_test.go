@@ -1,6 +1,10 @@
 package ses
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestBuildSESv2InputWithAttachments(t *testing.T) {
 	req := &EmailRequest{
@@ -71,5 +75,73 @@ func TestValidateEmailRequestAttachments(t *testing.T) {
 	}
 	if err := validateEmailRequest(req); err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestNewClient_NoGlobalMutation(t *testing.T) {
+	Reset()
+
+	cfg := &Config{
+		AccessKey: "AKIA_TEST_KEY",
+		SecretKey: "test_secret",
+		Region:    "eu-west-1",
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("NewClient returned nil client")
+	}
+	if client.Options().Region != "eu-west-1" {
+		t.Errorf("expected region 'eu-west-1', got %q", client.Options().Region)
+	}
+
+	// Global must remain untouched.
+	configMux.RLock()
+	defer configMux.RUnlock()
+	if globalConfig != nil {
+		t.Error("NewClient must not mutate globalConfig")
+	}
+	if globalClient != nil {
+		t.Error("NewClient must not mutate globalClient")
+	}
+}
+
+func TestNewClient_RejectsMissingCreds(t *testing.T) {
+	Reset()
+
+	cfg := &Config{Region: "us-east-1"} // no creds, UseIMDS=false
+	_, err := NewClient(cfg)
+	if err == nil {
+		t.Fatal("NewClient must reject missing creds when UseIMDS=false")
+	}
+}
+
+func TestSendEmailWith_UsesProvidedClient(t *testing.T) {
+	Reset()
+
+	cfg := &Config{
+		AccessKey: "AKIA_A",
+		SecretKey: "secret_a",
+		Region:    "ap-southeast-1",
+	}
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// Validation path — sending a request to AWS would require credentials,
+	// so we assert that validation runs against the request and that
+	// SendEmailWith accepts the client we constructed.
+	_, err = SendEmailWith(context.Background(), client, &EmailRequest{
+		// Missing From → validation error expected, NOT a network error.
+	})
+	if err == nil {
+		t.Fatal("SendEmailWith must reject invalid request")
+	}
+	if !strings.Contains(err.Error(), "sender email") {
+		t.Errorf("expected validation error about sender, got: %v", err)
 	}
 }

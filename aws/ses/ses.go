@@ -92,7 +92,41 @@ func loadConfigFromViper() (*Config, error) {
 	return cfg, nil
 }
 
-// initialize performs the actual SES client initialization
+// NewClient constructs a sesv2.Client from an explicit Config.
+// It does not touch package-level state.
+func NewClient(cfg *Config) (*sesv2.Client, error) {
+	region := cfg.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	ctx := context.Background()
+	var awsCfg awsv2.Config
+	var err error
+
+	if !cfg.UseIMDS {
+		if cfg.AccessKey == "" || cfg.SecretKey == "" {
+			return nil, fmt.Errorf("UseIMDS is false but AccessKey/SecretKey are not configured")
+		}
+		awsCfg, err = config.LoadDefaultConfig(ctx,
+			config.WithRegion(region),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				cfg.AccessKey,
+				cfg.SecretKey,
+				"",
+			)),
+		)
+	} else {
+		awsCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
+	}
+
+	return sesv2.NewFromConfig(awsCfg), nil
+}
+
+// initialize performs the actual SES client initialization for the global singleton.
 func initialize() {
 	cfg, err := loadConfigFromViper()
 	if err != nil {
@@ -100,45 +134,16 @@ func initialize() {
 		return
 	}
 
-	// Store config for later use
 	configMux.Lock()
 	globalConfig = cfg
 	configMux.Unlock()
 
-	// Default SES region
-	region := "us-east-1"
-	if cfg.Region != "" {
-		region = cfg.Region
-	}
-
-	ctx := context.Background()
-	var awsCfg awsv2.Config
-
-	// If UseIMDS is explicitly set to false, use static credentials
-	if !cfg.UseIMDS {
-		if cfg.AccessKey != "" && cfg.SecretKey != "" {
-			awsCfg, err = config.LoadDefaultConfig(ctx,
-				config.WithRegion(region),
-				config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-					cfg.AccessKey,
-					cfg.SecretKey,
-					"",
-				)),
-			)
-		} else {
-			initErr = fmt.Errorf("UseIMDS is false but AccessKey/SecretKey are not configured")
-			return
-		}
-	} else {
-		awsCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
-	}
-
+	client, err := NewClient(cfg)
 	if err != nil {
-		initErr = fmt.Errorf("failed to load AWS config: %v", err)
+		initErr = err
 		return
 	}
-
-	globalClient = sesv2.NewFromConfig(awsCfg)
+	globalClient = client
 	initErr = nil
 }
 
@@ -151,23 +156,15 @@ func getClient() (*sesv2.Client, error) {
 	return globalClient, nil
 }
 
-// SendEmail sends an email using AWS SES with simplified configuration
-func SendEmail(req *EmailRequest) (*EmailResponse, error) {
-	// Validate required fields
+// SendEmailWith sends an email using the provided client, without consulting
+// any package-level singleton. Callers that need multiple SES identities in
+// one process should use NewClient + SendEmailWith directly.
+func SendEmailWith(ctx context.Context, client *sesv2.Client, req *EmailRequest) (*EmailResponse, error) {
 	if err := validateEmailRequest(req); err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
 	}
 
-	client, err := getClient()
-	if err != nil {
-		return &EmailResponse{Success: false, Error: err}, err
-	}
-
-	// Build email input
 	input := buildSESv2Input(req)
-
-	// Send email
-	ctx := context.Background()
 	result, err := client.SendEmail(ctx, input)
 	if err != nil {
 		return &EmailResponse{Success: false, Error: err}, err
@@ -178,6 +175,16 @@ func SendEmail(req *EmailRequest) (*EmailResponse, error) {
 		Success:   true,
 		Error:     nil,
 	}, nil
+}
+
+// SendEmail sends an email using the global SES client (lazy-initialized from viper).
+// Existing callers are unaffected by SendEmailWith's introduction.
+func SendEmail(req *EmailRequest) (*EmailResponse, error) {
+	client, err := getClient()
+	if err != nil {
+		return &EmailResponse{Success: false, Error: err}, err
+	}
+	return SendEmailWith(context.Background(), client, req)
 }
 
 // SendSimpleEmail is a convenience function for sending basic text emails
