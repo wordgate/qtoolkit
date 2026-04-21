@@ -145,3 +145,40 @@ func TestSendEmailWith_UsesProvidedClient(t *testing.T) {
 		t.Errorf("expected validation error about sender, got: %v", err)
 	}
 }
+
+// TestBuildSESv2Input_SubjectCharsetUTF8 proves the SES SDK input carries the
+// Subject as UTF-8 bytes with an explicit Charset="UTF-8" marker to AWS. AWS
+// SES is contractually responsible for emitting RFC 2047 encoded headers on
+// the wire when Charset=UTF-8 (documented at
+// https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_Content.html).
+// Together with TestSMTP_SubjectRFC2047Encoding in the mail module, this
+// closes the end-to-end path: both provider branches (SMTP via gomail, SES
+// via sesv2 SDK) guarantee correct Chinese-subject encoding.
+func TestBuildSESv2Input_SubjectCharsetUTF8(t *testing.T) {
+	req := &EmailRequest{
+		From:     "sender@example.com",
+		To:       []string{"rcpt@example.com"},
+		Subject:  "五月中文主题测试",
+		BodyText: "hello",
+	}
+	input := buildSESv2Input(req)
+
+	subj := input.Content.Simple.Subject
+	if subj == nil {
+		t.Fatal("Subject content must not be nil")
+	}
+	if subj.Charset == nil || *subj.Charset != "UTF-8" {
+		got := "<nil>"
+		if subj.Charset != nil {
+			got = *subj.Charset
+		}
+		t.Errorf("Subject.Charset must be UTF-8, got %q", got)
+	}
+	if subj.Data == nil || *subj.Data != "五月中文主题测试" {
+		got := "<nil>"
+		if subj.Data != nil {
+			got = *subj.Data
+		}
+		t.Errorf("Subject.Data must carry raw UTF-8 string to AWS, got %q", got)
+	}
+}

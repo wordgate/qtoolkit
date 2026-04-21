@@ -1,9 +1,13 @@
 package mail
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -541,5 +545,114 @@ func TestConfig_SESMultiIdentity(t *testing.T) {
 	}
 	if b.ses.Options().Region != "eu-west-1" {
 		t.Errorf("ses_b region = %q, want eu-west-1", b.ses.Options().Region)
+	}
+}
+
+// captureSMTP starts a minimal in-process SMTP server on 127.0.0.1:<random>.
+// It advertises no extensions (no STARTTLS, no AUTH), so gomail sends plain,
+// unauthenticated mail. It accepts exactly one connection, captures the DATA
+// bytes, and delivers them on the returned channel when the session ends.
+func captureSMTP(t *testing.T) (host string, port int, body <-chan string) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	ch := make(chan string, 1)
+
+	go func() {
+		var raw strings.Builder
+		defer func() { ch <- raw.String() }()
+
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		r := bufio.NewReader(conn)
+		write := func(s string) { _, _ = fmt.Fprint(conn, s) }
+		write("220 localhost test ready\r\n")
+
+		inData := false
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if inData {
+				if strings.TrimRight(line, "\r\n") == "." {
+					write("250 2.0.0 OK\r\n")
+					inData = false
+					continue
+				}
+				raw.WriteString(line)
+				continue
+			}
+			cmd := strings.ToUpper(strings.TrimSpace(line))
+			switch {
+			case strings.HasPrefix(cmd, "EHLO"), strings.HasPrefix(cmd, "HELO"):
+				write("250 localhost\r\n")
+			case strings.HasPrefix(cmd, "MAIL FROM"), strings.HasPrefix(cmd, "RCPT TO"):
+				write("250 2.1.0 OK\r\n")
+			case cmd == "DATA":
+				write("354 End data with <CRLF>.<CRLF>\r\n")
+				inData = true
+			case cmd == "QUIT":
+				write("221 2.0.0 bye\r\n")
+				return
+			case cmd == "RSET", cmd == "NOOP":
+				write("250 2.0.0 OK\r\n")
+			default:
+				write("502 5.5.1 not implemented\r\n")
+			}
+		}
+	}()
+
+	addrHost, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("split host/port: %v", err)
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	return addrHost, p, ch
+}
+
+// TestSMTP_SubjectRFC2047Encoding proves gomail emits an RFC 2047 encoded
+// Subject header (=?UTF-8?...?=) when the Message.Subject contains non-ASCII
+// characters. This is the root-cause fix for the k2app Chinese-subject
+// mojibake incident: gomail applies Q-encoding via mime.QEncoding in its
+// default configuration, while hand-rolled net/smtp did not.
+func TestSMTP_SubjectRFC2047Encoding(t *testing.T) {
+	host, port, bodyCh := captureSMTP(t)
+
+	resetMailer()
+	viper.Set("mail.provider", "")
+	viper.Set("mail.send_from", "from@example.com")
+	viper.Set("mail.username", "u")
+	viper.Set("mail.password", "p")
+	viper.Set("mail.smtp_host", host)
+	viper.Set("mail.smtp_port", port)
+
+	if err := Send(&Message{
+		To:      "rcpt@example.com",
+		Subject: "五月中文主题测试",
+		Body:    "hello",
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	body := <-bodyCh
+	if !strings.Contains(body, "Subject: =?UTF-8?") {
+		t.Errorf("Subject must be RFC 2047 encoded (=?UTF-8?...?=); raw DATA was:\n%s", body)
+	}
+	if strings.Contains(body, "五月中文主题测试") {
+		t.Errorf("raw UTF-8 Chinese must NOT appear in Subject (would mojibake on GBK clients); raw DATA was:\n%s", body)
 	}
 }
