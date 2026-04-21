@@ -3,6 +3,7 @@ module github.com/wordgate/qtoolkit/mail
 go 1.25.0
 
 require (
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.54.4
 	github.com/spf13/viper v1.21.0
 	github.com/wordgate/qtoolkit/aws/ses v1.5.25
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
@@ -19,7 +20,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.15 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.54.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.11 // indirect

@@ -3,18 +3,15 @@ package mail
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/spf13/viper"
 )
 
-// 重置测试环境
+// resetMailer clears the sender registry. Kept as a local alias so existing
+// tests compile with minimal churn.
 func resetMailer() {
-	once = sync.Once{}
-	dialer = nil
-	from = ""
-	useSES = false
+	ResetForTest()
 }
 
 func TestSendTextEmail(t *testing.T) {
@@ -258,32 +255,32 @@ func TestCompleteEmailWithAllFeatures(t *testing.T) {
 }
 
 func TestMailerInitialization(t *testing.T) {
+	resetMailer()
+	viper.Set("mail.provider", "") // defensive reset; no dependency on prior tests
 	viper.Set("mail.send_from", "init@example.com")
 	viper.Set("mail.username", "init@example.com")
 	viper.Set("mail.password", "initpass")
 	viper.Set("mail.smtp_host", "smtp.init.com")
 	viper.Set("mail.smtp_port", 465)
 
-	// 重置
-	resetMailer()
-
-	// 触发初始化
-	initMailer()
-
-	if dialer == nil {
-		t.Fatal("Dialer should be initialized")
+	snd1, err := resolveSender("mail")
+	if err != nil {
+		t.Fatalf("resolveSender returned error: %v", err)
+	}
+	if snd1.smtp == nil {
+		t.Fatal("SMTP dialer should be initialized")
+	}
+	if snd1.cfg.SendFrom != "init@example.com" {
+		t.Errorf("expected from 'init@example.com', got %q", snd1.cfg.SendFrom)
 	}
 
-	if from != "init@example.com" {
-		t.Errorf("Expected from to be 'init@example.com', got '%s'", from)
+	// Second resolve must return the cached *sender.
+	snd2, err := resolveSender("mail")
+	if err != nil {
+		t.Fatalf("resolveSender returned error: %v", err)
 	}
-
-	// 再次初始化应该保持同一实例
-	firstDialer := dialer
-	initMailer()
-
-	if dialer != firstDialer {
-		t.Error("initMailer should return the same instance (singleton)")
+	if snd2 != snd1 {
+		t.Error("resolveSender should return cached sender (one *sender per prefix)")
 	}
 }
 
@@ -291,17 +288,25 @@ func TestSendProviderConfig(t *testing.T) {
 	resetMailer()
 	viper.Set("mail.provider", "ses")
 	viper.Set("mail.send_from", "test@example.com")
+	viper.Set("mail.region", "us-east-1")
+	viper.Set("mail.access_key", "AKIA_TEST")
+	viper.Set("mail.secret_key", "secret_test")
 
-	initMailer()
-
-	if !useSES {
-		t.Error("useSES should be true when mail.provider is 'ses'")
+	snd, err := resolveSender("mail")
+	if err != nil {
+		t.Fatalf("resolveSender returned error: %v", err)
 	}
-	if from != "test@example.com" {
-		t.Errorf("expected from 'test@example.com', got '%s'", from)
+	if snd.cfg.Provider != "ses" {
+		t.Errorf("expected provider 'ses', got %q", snd.cfg.Provider)
 	}
-	if dialer != nil {
-		t.Error("dialer should be nil when using SES")
+	if snd.cfg.SendFrom != "test@example.com" {
+		t.Errorf("expected from 'test@example.com', got %q", snd.cfg.SendFrom)
+	}
+	if snd.smtp != nil {
+		t.Error("SMTP dialer should be nil when provider is 'ses'")
+	}
+	if snd.ses == nil {
+		t.Error("SES client should be non-nil when provider is 'ses'")
 	}
 }
 
@@ -314,12 +319,17 @@ func TestSendProviderDefaultSMTP(t *testing.T) {
 	viper.Set("mail.smtp_host", "smtp.example.com")
 	viper.Set("mail.smtp_port", 587)
 
-	initMailer()
-
-	if useSES {
-		t.Error("useSES should be false when mail.provider is empty")
+	snd, err := resolveSender("mail")
+	if err != nil {
+		t.Fatalf("resolveSender returned error: %v", err)
 	}
-	if dialer == nil {
-		t.Error("dialer should be initialized for SMTP")
+	if snd.cfg.Provider != "smtp" {
+		t.Errorf("expected provider to default to 'smtp', got %q", snd.cfg.Provider)
+	}
+	if snd.smtp == nil {
+		t.Error("SMTP dialer should be initialized for SMTP provider")
+	}
+	if snd.ses != nil {
+		t.Error("SES client should be nil for SMTP provider")
 	}
 }
