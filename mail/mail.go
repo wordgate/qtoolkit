@@ -123,7 +123,13 @@ func Send(msg *Message) error {
 	return Config("mail").Send(msg)
 }
 
-// ResetForTest clears the sender registry. Intended for tests only.
+// ResetForTest clears the sender registry.
+//
+// Intended for tests only. Must not be called while any Send is in flight:
+// concurrent readers holding a *sender from the old map are unaffected, but
+// a subsequent Send on the same prefix will lazily rebuild state from viper,
+// and if the test mutates viper between Reset and the next Send, the two
+// goroutines observe different configs.
 func ResetForTest() {
 	registry = sync.Map{}
 }
@@ -163,7 +169,8 @@ func resolveSender(prefix string) (*sender, error) {
 	return snd, nil
 }
 
-// senderFor is a private accessor used by tests.
+// senderFor is a test-only read-through accessor into the registry.
+// Returns nil when the prefix has not been resolved yet (pre-lazy-init).
 func senderFor(prefix string) *sender {
 	v, _ := registry.Load(prefix)
 	if v == nil {
