@@ -478,18 +478,18 @@ func TestSend_EquivalentToConfigMail(t *testing.T) {
 	viper.Set("mail.send_from", "a@example.com")
 	viper.Set("mail.username", "a")
 	viper.Set("mail.password", "b")
-	viper.Set("mail.smtp_host", "smtp.a.com")
-	viper.Set("mail.smtp_port", 25)
+	// Loopback + reserved port: connect refuses immediately (ECONNREFUSED), no DNS,
+	// no hang on hostile/captive networks. Send's dial will fail fast; we only
+	// assert that the registry was populated before the dial was attempted.
+	viper.Set("mail.smtp_host", "127.0.0.1")
+	viper.Set("mail.smtp_port", 1)
 
-	// Force init via package-level Send's validation path (we do not
-	// actually dial — we only care that both paths hit the same *sender).
-	if err := Send(&Message{
+	// Send must trigger resolveSender("mail"). The dial error is expected.
+	_ = Send(&Message{
 		To:      "u@example.com",
 		Subject: "s",
 		Body:    "b",
-	}); err == nil {
-		t.Log("Send attempted dial (expected SMTP failure or success); ignoring error")
-	}
+	})
 
 	direct := senderFor("mail")
 	if direct == nil {
