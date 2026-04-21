@@ -20,6 +20,38 @@ mail:
   smtp_port: 587
 ```
 
+## 多发件身份（Multi-Sender）
+
+默认情况下 `mail.Send` 读取 `mail.*` 配置。若应用需要多个独立发件身份（如事务邮件与 EDM 分账号），在配置里新增顶级块，然后通过 `mail.Config(prefix)` 取回一个 `*Sender` 句柄：
+
+```go
+// 事务邮件（读 mail.*）
+mail.Send(&mail.Message{
+    To:      "user@example.com",
+    Subject: "验证码",
+    Body:    "123456",
+})
+
+// EDM 邮件（读 edm.*）
+mail.Config("edm").Send(&mail.Message{
+    To:      "user@example.com",
+    Subject: "五月活动",
+    Body:    "<h1>Hello</h1>",
+    IsHTML:  true,
+})
+
+// 句柄可复用，内部按 prefix 缓存 dialer/SES client
+edm := mail.Config("edm")
+edm.Send(msg1)
+edm.Send(msg2)
+```
+
+等价：`mail.Send(msg) ≡ mail.Config("mail").Send(msg)`。
+
+每个 prefix 完全自包含，**不走级联兜底**。prefix 配置缺失 / provider 不识别时，`Send()` 返回包裹 `ErrMissingConfig` / `ErrEmptyPrefix` 的错误。
+
+配置示例见 `mail_config.yml`。
+
 ## 使用示例
 
 ### 纯文本邮件
@@ -133,6 +165,8 @@ mail.Send(&mail.Message{
 | 函数 | 说明 |
 |------|------|
 | `Send(msg *Message) error` | 发送邮件（唯一的公共 API） |
+| `Config(prefix string) *Sender` | 返回绑定到 viper 前缀的 sender 句柄 |
+| `(*Sender).Send(msg *Message) error` | 用该身份发送邮件 |
 
 ## 特性
 

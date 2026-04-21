@@ -1,26 +1,44 @@
 # Mail Configuration Template
-# Add this to your main config.yml file
+# Add one or more top-level blocks to your main config.yml.
+# Each block defines one independent sender identity, addressable via
+# mail.Config("<prefix>"). The package-level mail.Send reads the "mail" prefix.
 
+# Default / transactional sender (used by mail.Send)
 mail:
-  # Provider: "ses" for AWS SES, or omit/leave empty for SMTP (default)
-  # provider: ses
+  # Provider: "smtp" (default) or "ses"
+  # provider: smtp
 
-  # Sender email address (required for both SMTP and SES)
+  # Sender email address (required)
   send_from: YOUR_EMAIL@example.com
 
-  # SMTP credentials (only needed when provider is not "ses")
+  # SMTP settings (required when provider is smtp)
   username: YOUR_EMAIL@example.com
   password: YOUR_EMAIL_PASSWORD
+  smtp_host: YOUR_SMTP_HOST          # e.g. smtp.gmail.com
+  smtp_port: 465                      # 465 for SSL, 587 for TLS
 
-  # SMTP server (only needed when provider is not "ses")
-  smtp_host: YOUR_SMTP_HOST        # e.g., smtp.gmail.com
-  smtp_port: 465                    # 465 for SSL, 587 for TLS
+# Example: separate EDM / marketing sender on a different SMTP account.
+# Accessed via mail.Config("edm").Send(&mail.Message{...}).
+# edm:
+#   provider: smtp
+#   send_from: promo@example.com
+#   username: promo-user
+#   password: promo-pass
+#   smtp_host: smtp.promo.example.com
+#   smtp_port: 465
 
-# To use AWS SES:
-#   1. Set mail.provider to "ses"
-#   2. Configure aws.ses.* (see aws/ses/ses_config.yml)
-#   3. Use mail.Send() as usual — it delegates to SES automatically
+# Example: SES-backed sender. No cascading fallback to aws.ses.* —
+# each prefix is self-contained.
+# notify:
+#   provider: ses
+#   send_from: alert@example.com
+#   region: us-east-1
+#   access_key: YOUR_AWS_ACCESS_KEY
+#   secret_key: YOUR_AWS_SECRET_KEY
+#   # Or, for EC2 instance role:
+#   # use_imds: true
 
 # Security Notes:
-# - Never commit real credentials to version control
-# - Rotate passwords regularly
+# - Never commit real credentials to version control.
+# - Rotate passwords and API keys regularly.
+# - Separate transactional and marketing senders to protect deliverability.

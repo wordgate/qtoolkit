@@ -1,5 +1,54 @@
 # Changelog
 
+## v2.1.0 - 多发件身份 (2026-04-21)
+
+### ✨ 新增
+
+`mail.Config(prefix string) *Sender` —— 按 viper 前缀获取发件身份句柄。同一进程可并存多套发件配置（事务 vs EDM vs 告警），每套独立 SMTP 账号或 SES 凭证。
+
+```go
+// 事务（读 mail.*，与原有行为一致）
+mail.Send(&mail.Message{...})
+
+// EDM（读 edm.*）
+mail.Config("edm").Send(&mail.Message{...})
+```
+
+等价关系：`mail.Send(msg) ≡ mail.Config("mail").Send(msg)`。
+
+### 💥 非破坏性
+
+- `mail.Send(*Message)` 签名、`Message`、`Attachment` 字段布局完全保留，下游调用方零改动。
+- 内部包级全局变量 `dialer / from / useSES / once` 被 prefix-keyed `sync.Map` 替代（对外不可见）。
+- `aws/ses` 新增两个 stateless 辅助：`ses.NewClient(cfg)`、`ses.SendEmailWith(ctx, client, req)`。原 `ses.SendEmail(req)` 保留不变。
+
+### 🎯 配置模型
+
+每个 prefix 顶格自包含，**不走级联兜底**：
+
+```yaml
+mail:
+  provider: smtp
+  send_from: noreply@kaitu.io
+  smtp_host: smtp.a.com
+  smtp_port: 465
+  username: user-a
+  password: pass-a
+
+edm:
+  provider: smtp
+  send_from: promo@kaitu.io
+  smtp_host: smtp.b.com
+  smtp_port: 465
+  username: user-b
+  password: pass-b
+```
+
+### 🔍 错误
+
+- `mail.ErrEmptyPrefix` —— `Config("")` 再 `Send()` 时返回。
+- `mail.ErrMissingConfig` —— 必填字段缺失、`provider` 取值不识别。
+
 ## v2.0.0 - 极简重构 (2025-12-22)
 
 ### 💥 Breaking Changes
