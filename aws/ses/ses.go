@@ -84,11 +84,6 @@ func loadConfigFromViper() (*Config, error) {
 		cfg.UseIMDS = viper.GetBool("aws.use_imds")
 	}
 
-	// Validate: default to us-east-1 if no region configured
-	if cfg.Region == "" {
-		cfg.Region = "us-east-1"
-	}
-
 	return cfg, nil
 }
 
@@ -120,7 +115,7 @@ func NewClient(cfg *Config) (*sesv2.Client, error) {
 		awsCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %v", err)
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
 	return sesv2.NewFromConfig(awsCfg), nil

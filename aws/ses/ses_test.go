@@ -132,14 +132,14 @@ func TestSendEmailWith_UsesProvidedClient(t *testing.T) {
 		t.Fatalf("NewClient failed: %v", err)
 	}
 
-	// Validation path — sending a request to AWS would require credentials,
-	// so we assert that validation runs against the request and that
-	// SendEmailWith accepts the client we constructed.
+	// Valid in all respects except missing From — targets the sender-validation branch.
 	_, err = SendEmailWith(context.Background(), client, &EmailRequest{
-		// Missing From → validation error expected, NOT a network error.
+		To:       []string{"rcpt@example.com"},
+		Subject:  "hi",
+		BodyText: "body",
 	})
 	if err == nil {
-		t.Fatal("SendEmailWith must reject invalid request")
+		t.Fatal("SendEmailWith must reject request with empty From")
 	}
 	if !strings.Contains(err.Error(), "sender email") {
 		t.Errorf("expected validation error about sender, got: %v", err)
