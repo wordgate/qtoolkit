@@ -505,3 +505,41 @@ func TestSend_EquivalentToConfigMail(t *testing.T) {
 		t.Error("Send(msg) and Config(\"mail\").Send(msg) must share the same *sender")
 	}
 }
+
+func TestConfig_SESMultiIdentity(t *testing.T) {
+	resetMailer()
+
+	viper.Set("ses_a.provider", "ses")
+	viper.Set("ses_a.send_from", "a@example.com")
+	viper.Set("ses_a.region", "us-east-1")
+	viper.Set("ses_a.access_key", "AKIA_A")
+	viper.Set("ses_a.secret_key", "secret_a")
+
+	viper.Set("ses_b.provider", "ses")
+	viper.Set("ses_b.send_from", "b@example.com")
+	viper.Set("ses_b.region", "eu-west-1")
+	viper.Set("ses_b.access_key", "AKIA_B")
+	viper.Set("ses_b.secret_key", "secret_b")
+
+	a, err := resolveSender("ses_a")
+	if err != nil {
+		t.Fatalf("resolve ses_a: %v", err)
+	}
+	b, err := resolveSender("ses_b")
+	if err != nil {
+		t.Fatalf("resolve ses_b: %v", err)
+	}
+
+	if a.ses == nil || b.ses == nil {
+		t.Fatal("both SES senders must have non-nil clients")
+	}
+	if a.ses == b.ses {
+		t.Error("each SES prefix must own its own *sesv2.Client")
+	}
+	if a.ses.Options().Region != "us-east-1" {
+		t.Errorf("ses_a region = %q, want us-east-1", a.ses.Options().Region)
+	}
+	if b.ses.Options().Region != "eu-west-1" {
+		t.Errorf("ses_b region = %q, want eu-west-1", b.ses.Options().Region)
+	}
+}
