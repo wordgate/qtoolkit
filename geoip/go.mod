@@ -1,6 +1,6 @@
 module github.com/wordgate/qtoolkit/geoip
 
-go 1.25.0
+go 1.24.0
 
 require (
 	github.com/oschwald/geoip2-golang v1.11.0
