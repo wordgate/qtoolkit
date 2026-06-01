@@ -134,8 +134,31 @@ func main() {
 type Config struct {
     DSN   string  // MySQL DSN 连接字符串
     Debug bool    // 是否开启调试模式
+
+    // 连接池调优（均可选，<= 0 时使用默认值）
+    MaxOpenConns    int  // 最大并发连接数；默认 0 = 不限制
+    MaxIdleConns    int  // 保活的空闲连接数；默认 5（标准库默认仅 2）
+    ConnMaxLifetime int  // 连接最长存活秒数；默认 3600（1h，标准库默认 0 = 永不回收）
+    ConnMaxIdleTime int  // 空闲连接最长存活秒数；默认 300（5m，标准库默认 0 = 不超时）
 }
 ```
+
+### 连接池默认值
+
+通过 `database/sql` 标准库的 `SetMaxOpenConns / SetMaxIdleConns / SetConnMaxLifetime /
+SetConnMaxIdleTime` 应用（GORM 官方推荐做法，GORM 自身不做池管理）。默认值针对**低流量服务**
+调优：低流量下的主要风险不是连接耗尽，而是连接长时间空闲被服务端（MySQL `wait_timeout`/代理）
+掐断后被复用，导致多秒卡顿或 `invalid connection`。
+
+| Knob | 标准库默认 | qtoolkit 默认 | 原因 |
+|------|-----------|--------------|------|
+| `MaxOpenConns` | 0（无限） | 0（无限） | 低流量不会突刺，上限保持 opt-in |
+| `MaxIdleConns` | 2 | **5** | 低并发用不着大空闲池，少占 MySQL 连接槽 |
+| `ConnMaxLifetime` | 0（永不） | **1h** | 兜底：按存活时长回收连接 |
+| `ConnMaxIdleTime` | 0（不超时） | **5m** | 关键修复：低流量长空闲间隙里主动回收空闲连接，绝不复用已被服务端掐断的陈旧连接 |
+
+> 高并发场景可显式调大 `max_idle_conns`；多实例部署可设 `max_open_conns`（按 `实例数 × 该值 < MySQL max_connections` 估算）。
+> 若 MySQL `wait_timeout` 低于 300s，应把 `conn_max_idle_time_seconds` 设得更小。
 
 ### DSN 格式示例
 

@@ -9,6 +9,16 @@ database:
   # Enable debug mode (prints SQL queries)
   debug: false
 
+  # Connection pool tuning (all optional; omit to use defaults).
+  # These map to database/sql's pool knobs (the GORM-recommended approach).
+  # Defaults are tuned for low-traffic services: a small warm pool plus
+  # aggressive idle reaping so a long-idle connection killed by MySQL
+  # wait_timeout is never reused (which would stall for seconds).
+  max_open_conns: 0               # max concurrent open connections; 0 = unlimited (default)
+  max_idle_conns: 5               # idle connections kept ready (default 5; stdlib default is 2)
+  conn_max_lifetime_seconds: 3600 # recycle a connection after this long (default 3600 = 1h; 0 in stdlib = forever)
+  conn_max_idle_time_seconds: 300 # close idle connections after this long (default 300 = 5m; 0 in stdlib = no idle timeout)
+
 # Security Notes:
 # - Never commit real credentials to version control
 # - Use environment variables for production

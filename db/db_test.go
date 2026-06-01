@@ -2,9 +2,71 @@ package db
 
 import (
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 )
+
+func TestResolvePoolDefaults(t *testing.T) {
+	// Empty config: safe defaults applied. MaxOpenConns stays 0 (unlimited) to
+	// preserve database/sql's historical behavior; idle + lifetime improve.
+	got := resolvePool(&Config{})
+
+	if got.maxOpen != defaultMaxOpenConns {
+		t.Errorf("maxOpen: want %d (unlimited), got %d", defaultMaxOpenConns, got.maxOpen)
+	}
+	if got.maxIdle != defaultMaxIdleConns {
+		t.Errorf("maxIdle: want %d, got %d", defaultMaxIdleConns, got.maxIdle)
+	}
+	if got.maxLifetime != defaultConnMaxLifetime {
+		t.Errorf("maxLifetime: want %v, got %v", defaultConnMaxLifetime, got.maxLifetime)
+	}
+	if got.maxIdleTime != defaultConnMaxIdleTime {
+		t.Errorf("maxIdleTime: want %v (unset), got %v", defaultConnMaxIdleTime, got.maxIdleTime)
+	}
+}
+
+func TestResolvePoolOverrides(t *testing.T) {
+	got := resolvePool(&Config{
+		MaxOpenConns:    50,
+		MaxIdleConns:    20,
+		ConnMaxLifetime: 600,
+		ConnMaxIdleTime: 120,
+	})
+
+	if got.maxOpen != 50 {
+		t.Errorf("maxOpen: want 50, got %d", got.maxOpen)
+	}
+	if got.maxIdle != 20 {
+		t.Errorf("maxIdle: want 20, got %d", got.maxIdle)
+	}
+	if got.maxLifetime != 600*time.Second {
+		t.Errorf("maxLifetime: want 10m, got %v", got.maxLifetime)
+	}
+	if got.maxIdleTime != 120*time.Second {
+		t.Errorf("maxIdleTime: want 2m, got %v", got.maxIdleTime)
+	}
+}
+
+func TestLoadConfigReadsPoolFields(t *testing.T) {
+	Reset()
+	viper.Reset()
+
+	viper.Set("database.dsn", "user:pass@tcp(localhost:3306)/db")
+	viper.Set("database.max_open_conns", 33)
+	viper.Set("database.max_idle_conns", 7)
+	viper.Set("database.conn_max_lifetime_seconds", 900)
+	viper.Set("database.conn_max_idle_time_seconds", 60)
+
+	cfg, err := loadConfigFromViper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxOpenConns != 33 || cfg.MaxIdleConns != 7 ||
+		cfg.ConnMaxLifetime != 900 || cfg.ConnMaxIdleTime != 60 {
+		t.Errorf("pool fields not loaded: %+v", cfg)
+	}
+}
 
 func TestGetWithoutConfig(t *testing.T) {
 	Reset() // Reset state for clean test
