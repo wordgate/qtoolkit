@@ -12,13 +12,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/wordgate/qtoolkit/log"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/xid"
 	"github.com/spf13/viper"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // 定义错误类型
@@ -321,32 +323,44 @@ func extractHeaderByIndex(payload string, index int) ([]byte, error) {
 	return certBytes, nil
 }
 
-// verifyPayload 验证JWT payload的证书链
+// verifyPayload 验证 JWS payload 的证书链。
+// Apple 的 x5c 顺序为：[0]=叶子(签名证书)、[1]=中间证书、[2]=Apple 根。
+// 这里校验叶子证书经中间证书链到内置 Apple 根。
 func verifyPayload(payload string) error {
-	// 提取根证书
-	rootCertBytes, err := extractHeaderByIndex(payload, 2)
+	return verifyPayloadWithRoot(payload, AppleRootCAPEM)
+}
+
+// verifyPayloadWithRoot 与 verifyPayload 相同，但允许注入信任根（测试用）。
+func verifyPayloadWithRoot(payload string, rootPEM []byte) error {
+	// 提取叶子证书（x5c[0]，即真正用于签名的证书）
+	leafCertBytes, err := extractHeaderByIndex(payload, 0)
 	if err != nil {
-		return fmt.Errorf("failed to extract root certificate: %w", err)
+		return fmt.Errorf("failed to extract leaf certificate: %w", err)
 	}
 
-	// 提取中间证书
+	// 提取中间证书（x5c[1]）
 	intermediateCertBytes, err := extractHeaderByIndex(payload, 1)
 	if err != nil {
 		return fmt.Errorf("failed to extract intermediate certificate: %w", err)
 	}
 
-	// 验证证书链
-	return verifyCertificateChain(rootCertBytes, intermediateCertBytes)
+	// 验证证书链：leaf → intermediate → root
+	return verifyCertificateChainWithRoot(leafCertBytes, intermediateCertBytes, rootPEM)
 }
 
-// verifyCertificateChain 验证证书链
+// verifyCertificateChain 验证证书链（信任内置 Apple 根）。
 func verifyCertificateChain(certBytes, intermediateCertBytes []byte) error {
+	return verifyCertificateChainWithRoot(certBytes, intermediateCertBytes, AppleRootCAPEM)
+}
+
+// verifyCertificateChainWithRoot 验证 leaf → intermediate → 指定根 的证书链。
+func verifyCertificateChainWithRoot(certBytes, intermediateCertBytes, rootPEM []byte) error {
 	// 创建根证书池
 	roots := x509.NewCertPool()
 
-	// 使用嵌入的Apple根证书
-	if !roots.AppendCertsFromPEM(AppleRootCAPEM) {
-		return errors.New("failed to parse Apple root certificate")
+	// 使用传入的根证书
+	if !roots.AppendCertsFromPEM(rootPEM) {
+		return errors.New("failed to parse root certificate")
 	}
 
 	// 解析中间证书
@@ -377,4 +391,108 @@ func verifyCertificateChain(certBytes, intermediateCertBytes []byte) error {
 	}
 
 	return nil
+}
+
+// ==================== Get All Subscription Statuses ====================
+
+// base URL 默认指向正式/沙盒；以包变量形式提供以便测试覆盖。
+var (
+	subStatusBaseProd    = IAP_SERVER_API
+	subStatusBaseSandbox = IAP_SANDBOX_SERVER_API
+)
+
+// buildSubscriptionStatusURL 拼接 Get All Subscription Statuses 的请求 URL，
+// 可选附带一个或多个 status 过滤参数。
+func buildSubscriptionStatusURL(base, transactionId string, statuses []int32) string {
+	u := fmt.Sprintf("%s/inApps/v1/subscriptions/%s", base, transactionId)
+	if len(statuses) > 0 {
+		q := url.Values{}
+		for _, s := range statuses {
+			q.Add("status", strconv.Itoa(int(s)))
+		}
+		u += "?" + q.Encode()
+	}
+	return u
+}
+
+// GetAllSubscriptionStatuses 调用 Apple 的 Get All Subscription Statuses 端点，
+// 返回与给定 transactionId 关联的订阅状态（含最近交易与续期信息）。
+// 与 GetTransaction 一致：先试正式环境，失败再回退沙盒。
+// statuses 可选，用于只返回指定状态（见 SubscriptionStatus_* 常量）。
+func GetAllSubscriptionStatuses(ctx context.Context, bundleId, transactionId string, statuses ...int32) (*StatusResponse, error) {
+	if bundleId == "" || transactionId == "" {
+		return nil, errors.New("bundleId and transactionId are required")
+	}
+
+	resp, err := getSubscriptionStatusesFromEnv(ctx, bundleId, transactionId, false, statuses)
+	if err != nil {
+		resp, err = getSubscriptionStatusesFromEnv(ctx, bundleId, transactionId, true, statuses)
+	}
+	return resp, err
+}
+
+func getSubscriptionStatusesFromEnv(ctx context.Context, bundleId, transactionId string, isSandbox bool, statuses []int32) (*StatusResponse, error) {
+	base := subStatusBaseProd
+	if isSandbox {
+		base = subStatusBaseSandbox
+	}
+	reqURL := buildSubscriptionStatusURL(base, transactionId, statuses)
+
+	jwtToken, err := GenerateJwtToken(bundleId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jwtToken)
+	req.Header.Add("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var out StatusResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return &out, nil
+}
+
+// DecodeTransaction 解析 LastTransactionsItem 内签名的交易信息(JWS)。
+func (it *LastTransactionsItem) DecodeTransaction() (*TransactionInfo, error) {
+	if it.SignedTransactionInfo == "" {
+		return nil, ErrMissingTransactionInfo
+	}
+	ti := &TransactionInfo{}
+	if _, err := parseJWT(it.SignedTransactionInfo, ti); err != nil {
+		return nil, err
+	}
+	return ti, nil
+}
+
+// DecodeRenewal 解析 LastTransactionsItem 内签名的续期信息(JWS)。
+func (it *LastTransactionsItem) DecodeRenewal() (*RenewalInfo, error) {
+	if it.SignedRenewalInfo == "" {
+		return nil, errors.New("no signed renewal info")
+	}
+	ri := &RenewalInfo{}
+	if _, err := parseJWT(it.SignedRenewalInfo, ri); err != nil {
+		return nil, err
+	}
+	return ri, nil
 }

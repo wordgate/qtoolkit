@@ -239,4 +239,37 @@ const (
 	OwnershipType_PURCHASED_TRIAL = "PURCHASED_TRIAL" // 试用购买
 )
 
+// ==================== Get All Subscription Statuses 响应类型 ====================
+
+// StatusResponse 是 Get All Subscription Statuses 端点的响应。
+type StatusResponse struct {
+	Environment string                            `json:"environment"`
+	BundleId    string                            `json:"bundleId"`
+	AppAppleId  int64                             `json:"appAppleId"`
+	Data        []SubscriptionGroupIdentifierItem `json:"data"`
+}
+
+// SubscriptionGroupIdentifierItem 表示一个订阅组及其最近交易。
+type SubscriptionGroupIdentifierItem struct {
+	SubscriptionGroupIdentifier string                 `json:"subscriptionGroupIdentifier"`
+	LastTransactions            []LastTransactionsItem `json:"lastTransactions"`
+}
+
+// LastTransactionsItem 表示订阅组内某条订阅的最近一笔交易 + 续期信息。
+type LastTransactionsItem struct {
+	Status                int32  `json:"status"`                // 订阅状态，见 SubscriptionStatus_* 常量
+	OriginalTransactionId string `json:"originalTransactionId"` // 原始交易ID
+	SignedTransactionInfo string `json:"signedTransactionInfo"` // 签名交易信息(JWS)
+	SignedRenewalInfo     string `json:"signedRenewalInfo"`     // 签名续期信息(JWS)
+}
+
+// 自动续订订阅状态常量 - 对应 LastTransactionsItem.Status
+const (
+	SubscriptionStatus_Active             int32 = 1 // 有效
+	SubscriptionStatus_Expired            int32 = 2 // 已过期
+	SubscriptionStatus_BillingRetry       int32 = 3 // 账单重试中
+	SubscriptionStatus_BillingGracePeriod int32 = 4 // 账单宽限期
+	SubscriptionStatus_Revoked            int32 = 5 // 已撤销
+)
+
 // 其他相关类型定义...
