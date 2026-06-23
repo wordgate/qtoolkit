@@ -23,8 +23,17 @@
 //	// Query subscriptions
 //	subs, err := nextpay.GetSubscriptions("user123")
 //
-//	// Toggle auto-renew off (cancel at period end)
+// Subscription lifecycle — one call per intent:
+//
+//	// Stop auto-renew; keep access until the period ends (the friendly default).
 //	err := nextpay.SetAutoRenew("sub_123", false)
+//
+//	// Suspend now, resume later (recommended as the primary customer action).
+//	sub, err := nextpay.PauseSubscription("sub_123")
+//	sub, err := nextpay.ResumeSubscription("sub_123", true /* payWithWallet */)
+//
+//	// Hard cancel — terminate immediately (admin/support: refund, fraud, deletion).
+//	err := nextpay.CancelSubscription("sub_123")
 package nextpay
 
 import (
@@ -164,13 +173,13 @@ type Response struct {
 
 // SubscriptionRequest represents a subscription creation request.
 type SubscriptionRequest struct {
-	UserID      string            `json:"userId"`
-	PlanID      string            `json:"planId"`
-	SuccessURL  string            `json:"successUrl"`
-	CancelURL   string            `json:"cancelUrl"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	TrialDays   int               `json:"trialDays,omitempty"`
-	CouponCode  string            `json:"couponCode,omitempty"`
+	UserID     string            `json:"userId"`
+	PlanID     string            `json:"planId"`
+	SuccessURL string            `json:"successUrl"`
+	CancelURL  string            `json:"cancelUrl"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	TrialDays  int               `json:"trialDays,omitempty"`
+	CouponCode string            `json:"couponCode,omitempty"`
 }
 
 // CheckoutResult represents the result of checkout operations.
@@ -231,11 +240,11 @@ type PendingCharge struct {
 
 // RechargeContractRequest represents an auto-recharge contract creation.
 type RechargeContractRequest struct {
-	UserID         string            `json:"userId"`
-	MaxAmount      int               `json:"maxAmount"` // maximum per charge in cents
-	SuccessURL     string            `json:"successUrl"`
-	CancelURL      string            `json:"cancelUrl"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
+	UserID     string            `json:"userId"`
+	MaxAmount  int               `json:"maxAmount"` // maximum per charge in cents
+	SuccessURL string            `json:"successUrl"`
+	CancelURL  string            `json:"cancelUrl"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // RechargeContractResult represents the contract creation result.
@@ -367,13 +376,18 @@ func SetAutoRenew(subscriptionID string, enabled bool) error {
 	return client.setAutoRenew(subscriptionID, enabled)
 }
 
-// CancelSubscription cancels a subscription, either immediately or at period end.
-func CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
+// CancelSubscription immediately and permanently terminates a subscription.
+//
+// This is the hard "cancel now" path — typically an admin/support action
+// (refund, fraud, account deletion). For the everyday customer flows prefer:
+//   - SetAutoRenew(id, false): stop auto-renew, keep access until period end
+//   - PauseSubscription(id):   suspend with the option to resume later
+func CancelSubscription(subscriptionID string) error {
 	client, err := Get()
 	if err != nil {
 		return err
 	}
-	return client.cancelSubscription(subscriptionID, cancelAtPeriodEnd)
+	return client.cancelSubscription(subscriptionID)
 }
 
 // PauseSubscription pauses an active subscription.
@@ -572,9 +586,12 @@ func (c *Client) setAutoRenew(subscriptionID string, enabled bool) error {
 	return err
 }
 
-func (c *Client) cancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
+func (c *Client) cancelSubscription(subscriptionID string) error {
+	// cancelAtPeriodEnd=false -> terminate immediately. The "cancel at period
+	// end" intent is owned solely by SetAutoRenew(id, false) so there is exactly
+	// one call per intent.
 	_, err := c.doRequest("POST", "/api/subscriptions/"+subscriptionID+"/cancel", map[string]any{
-		"cancelAtPeriodEnd": cancelAtPeriodEnd,
+		"cancelAtPeriodEnd": false,
 	})
 	return err
 }

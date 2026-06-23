@@ -499,8 +499,10 @@ func TestCancelSubscription_Success(t *testing.T) {
 		if !ok {
 			t.Error("expected 'cancelAtPeriodEnd' bool field in body")
 		}
-		if cancelAtPeriodEnd != true {
-			t.Errorf("cancelAtPeriodEnd = %v, want true", cancelAtPeriodEnd)
+		// CancelSubscription is immediate-only; "cancel at period end" is
+		// SetAutoRenew(id,false)'s job.
+		if cancelAtPeriodEnd != false {
+			t.Errorf("cancelAtPeriodEnd = %v, want false", cancelAtPeriodEnd)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -513,7 +515,7 @@ func TestCancelSubscription_Success(t *testing.T) {
 		Endpoint:  server.URL,
 	})
 
-	err := CancelSubscription("sub_123", true)
+	err := CancelSubscription("sub_123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -538,11 +540,11 @@ func TestPauseSubscription_Success(t *testing.T) {
 		json.NewEncoder(w).Encode(testResponse{
 			Code: 0,
 			Data: map[string]interface{}{
-				"id":         "sub_123",
-				"status":     "paused",
-				"userId":     "user123",
-				"planId":     "plan_monthly",
-				"autoRenew":  true,
+				"id":        "sub_123",
+				"status":    "paused",
+				"userId":    "user123",
+				"planId":    "plan_monthly",
+				"autoRenew": true,
 			},
 		})
 	}))
