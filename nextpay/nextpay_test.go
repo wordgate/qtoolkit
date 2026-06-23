@@ -409,3 +409,224 @@ func TestServerError(t *testing.T) {
 		t.Error("expected error on server error")
 	}
 }
+
+func TestSetAutoRenew_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/subscriptions/sub_123/auto-renew" {
+			t.Errorf("path = %s, want /api/subscriptions/sub_123/auto-renew", r.URL.Path)
+		}
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		enabled, ok := body["enabled"].(bool)
+		if !ok {
+			t.Error("expected 'enabled' bool field in body")
+		}
+		if enabled != false {
+			t.Errorf("enabled = %v, want false", enabled)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(testResponse{Code: 0})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	err := SetAutoRenew("sub_123", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetAutoRenew_APIError(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(testResponse{
+			Code:    404,
+			Message: "subscription not found",
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	err := SetAutoRenew("sub_404", false)
+	if err == nil {
+		t.Fatal("expected error on API error")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.Code != 404 {
+		t.Errorf("code = %d, want 404", apiErr.Code)
+	}
+}
+
+func TestCancelSubscription_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/subscriptions/sub_123/cancel" {
+			t.Errorf("path = %s, want /api/subscriptions/sub_123/cancel", r.URL.Path)
+		}
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		cancelAtPeriodEnd, ok := body["cancelAtPeriodEnd"].(bool)
+		if !ok {
+			t.Error("expected 'cancelAtPeriodEnd' bool field in body")
+		}
+		if cancelAtPeriodEnd != true {
+			t.Errorf("cancelAtPeriodEnd = %v, want true", cancelAtPeriodEnd)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(testResponse{Code: 0})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	err := CancelSubscription("sub_123", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPauseSubscription_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/subscriptions/sub_123/pause" {
+			t.Errorf("path = %s, want /api/subscriptions/sub_123/pause", r.URL.Path)
+		}
+		// No body for pause
+		if r.ContentLength > 0 {
+			t.Error("expected no body for pause request")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(testResponse{
+			Code: 0,
+			Data: map[string]interface{}{
+				"id":         "sub_123",
+				"status":     "paused",
+				"userId":     "user123",
+				"planId":     "plan_monthly",
+				"autoRenew":  true,
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	sub, err := PauseSubscription("sub_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sub == nil {
+		t.Fatal("expected non-nil subscription")
+	}
+	if sub.ID != "sub_123" {
+		t.Errorf("id = %s, want sub_123", sub.ID)
+	}
+	if sub.Status != "paused" {
+		t.Errorf("status = %s, want paused", sub.Status)
+	}
+	if !sub.AutoRenew {
+		t.Error("expected autoRenew = true")
+	}
+}
+
+func TestResumeSubscription_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/subscriptions/sub_123/resume" {
+			t.Errorf("path = %s, want /api/subscriptions/sub_123/resume", r.URL.Path)
+		}
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		payWithWallet, ok := body["payWithWallet"].(bool)
+		if !ok {
+			t.Error("expected 'payWithWallet' bool field in body")
+		}
+		if payWithWallet != true {
+			t.Errorf("payWithWallet = %v, want true", payWithWallet)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(testResponse{
+			Code: 0,
+			Data: map[string]interface{}{
+				"id":        "sub_123",
+				"status":    "active",
+				"userId":    "user123",
+				"planId":    "plan_monthly",
+				"autoRenew": false,
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	sub, err := ResumeSubscription("sub_123", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sub == nil {
+		t.Fatal("expected non-nil subscription")
+	}
+	if sub.ID != "sub_123" {
+		t.Errorf("id = %s, want sub_123", sub.ID)
+	}
+	if sub.Status != "active" {
+		t.Errorf("status = %s, want active", sub.Status)
+	}
+	if sub.AutoRenew {
+		t.Error("expected autoRenew = false")
+	}
+}

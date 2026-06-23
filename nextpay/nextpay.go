@@ -22,6 +22,9 @@
 //
 //	// Query subscriptions
 //	subs, err := nextpay.GetSubscriptions("user123")
+//
+//	// Toggle auto-renew off (cancel at period end)
+//	err := nextpay.SetAutoRenew("sub_123", false)
 package nextpay
 
 import (
@@ -196,6 +199,7 @@ type Subscription struct {
 	Status            string `json:"status"` // active, trialing, past_due, cancelled, expired
 	CurrentPeriodEnd  string `json:"currentPeriodEnd,omitempty"`
 	CancelAtPeriodEnd bool   `json:"cancelAtPeriodEnd,omitempty"`
+	AutoRenew         bool   `json:"autoRenew"`
 }
 
 // Order represents a user's order.
@@ -351,6 +355,43 @@ func CancelRechargeContract(contractID string) error {
 		return err
 	}
 	return client.cancelRechargeContract(contractID)
+}
+
+// SetAutoRenew enables or disables automatic renewal for a subscription.
+// autoRenew == !cancelAtPeriodEnd: passing false turns off auto-renew (cancel at period end).
+func SetAutoRenew(subscriptionID string, enabled bool) error {
+	client, err := Get()
+	if err != nil {
+		return err
+	}
+	return client.setAutoRenew(subscriptionID, enabled)
+}
+
+// CancelSubscription cancels a subscription, either immediately or at period end.
+func CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
+	client, err := Get()
+	if err != nil {
+		return err
+	}
+	return client.cancelSubscription(subscriptionID, cancelAtPeriodEnd)
+}
+
+// PauseSubscription pauses an active subscription.
+func PauseSubscription(subscriptionID string) (*Subscription, error) {
+	client, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return client.pauseSubscription(subscriptionID)
+}
+
+// ResumeSubscription resumes a paused subscription.
+func ResumeSubscription(subscriptionID string, payWithWallet bool) (*Subscription, error) {
+	client, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return client.resumeSubscription(subscriptionID, payWithWallet)
 }
 
 // --- Client Methods ---
@@ -522,4 +563,46 @@ func (c *Client) chargeContract(contractID string, req *ContractChargeRequest) (
 func (c *Client) cancelRechargeContract(contractID string) error {
 	_, err := c.doRequest("DELETE", "/api/recharge-contracts/"+contractID, nil)
 	return err
+}
+
+func (c *Client) setAutoRenew(subscriptionID string, enabled bool) error {
+	_, err := c.doRequest("POST", "/api/subscriptions/"+subscriptionID+"/auto-renew", map[string]any{
+		"enabled": enabled,
+	})
+	return err
+}
+
+func (c *Client) cancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
+	_, err := c.doRequest("POST", "/api/subscriptions/"+subscriptionID+"/cancel", map[string]any{
+		"cancelAtPeriodEnd": cancelAtPeriodEnd,
+	})
+	return err
+}
+
+func (c *Client) pauseSubscription(subscriptionID string) (*Subscription, error) {
+	resp, err := c.doRequest("POST", "/api/subscriptions/"+subscriptionID+"/pause", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var sub Subscription
+	if err := json.Unmarshal(resp.Data, &sub); err != nil {
+		return nil, fmt.Errorf("failed to decode subscription: %w", err)
+	}
+	return &sub, nil
+}
+
+func (c *Client) resumeSubscription(subscriptionID string, payWithWallet bool) (*Subscription, error) {
+	resp, err := c.doRequest("POST", "/api/subscriptions/"+subscriptionID+"/resume", map[string]any{
+		"payWithWallet": payWithWallet,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var sub Subscription
+	if err := json.Unmarshal(resp.Data, &sub); err != nil {
+		return nil, fmt.Errorf("failed to decode subscription: %w", err)
+	}
+	return &sub, nil
 }
