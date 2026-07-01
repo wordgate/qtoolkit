@@ -211,6 +211,33 @@ type Subscription struct {
 	AutoRenew         bool   `json:"autoRenew"`
 }
 
+// GrantSubscriptionRequest directly grants a user an active subscription with
+// no first payment (comps, partnerships, operational make-goods).
+type GrantSubscriptionRequest struct {
+	UserID         string `json:"userId,omitempty"` // app-side user id; one of UserID/Email required
+	Email          string `json:"email,omitempty"`  // used to create the user if UserID absent
+	Name           string `json:"name,omitempty"`   // optional display name
+	PlanID         string `json:"planId"`           // plan code or uuid (required)
+	ObjectID       string `json:"objectId,omitempty"`
+	Reason         string `json:"reason,omitempty"` // audit note
+	IdempotencyKey string `json:"idempotencyKey"`   // required; unique per app, dedupes retries
+}
+
+// GrantedSubscription is the subscription returned by a grant.
+type GrantedSubscription struct {
+	UUID               string `json:"uuid"`
+	PlanCode           string `json:"planCode"`
+	Status             string `json:"status"` // "active"
+	CurrentPeriodStart string `json:"currentPeriodStart"`
+	CurrentPeriodEnd   string `json:"currentPeriodEnd"`
+}
+
+// GrantResult is the result of GrantSubscription.
+type GrantResult struct {
+	Subscription GrantedSubscription `json:"subscription"`
+	OrderUUID    string              `json:"orderUuid"`
+}
+
 // Order represents a user's order.
 type Order struct {
 	ID        string `json:"id"`
@@ -283,6 +310,26 @@ func CreateSubscription(req *SubscriptionRequest) (*CheckoutResult, error) {
 		return nil, err
 	}
 	return client.createSubscription(req)
+}
+
+// GrantSubscription directly grants a user an active subscription with no first
+// payment. The subscription is active immediately (no payment page, no Stripe
+// session, no wallet deduction); the first period is comped. At period end it
+// follows normal renewal (wallet-first, saved card if any, else expired).
+//
+// Idempotent on req.IdempotencyKey: a retry with the same key and parameters
+// returns the same subscription. No webhook is emitted — the caller already has
+// the result from this HTTP response. Errors surface as *APIError (use
+// errors.As, then switch on Code):
+//   - 400404: the idempotency key was reused with different parameters
+//   - 400403: the user already has an active subscription to this plan
+//   - 400301: the plan does not exist
+func GrantSubscription(req *GrantSubscriptionRequest) (*GrantResult, error) {
+	client, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return client.grantSubscription(req)
 }
 
 // CreateOrder creates a new one-time payment order.
@@ -464,6 +511,19 @@ func (c *Client) createSubscription(req *SubscriptionRequest) (*CheckoutResult, 
 	}
 
 	var result CheckoutResult
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode result: %w", err)
+	}
+	return &result, nil
+}
+
+func (c *Client) grantSubscription(req *GrantSubscriptionRequest) (*GrantResult, error) {
+	resp, err := c.doRequest("POST", "/api/checkout/subscription/grant", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result GrantResult
 	if err := json.Unmarshal(resp.Data, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode result: %w", err)
 	}

@@ -2,6 +2,7 @@ package nextpay
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -630,5 +631,134 @@ func TestResumeSubscription_Success(t *testing.T) {
 	}
 	if sub.AutoRenew {
 		t.Error("expected autoRenew = false")
+	}
+}
+
+func TestGrantSubscription_Success(t *testing.T) {
+	resetState()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/checkout/subscription/grant" {
+			t.Errorf("path = %s, want /api/checkout/subscription/grant", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("Authorization = %s, want Bearer test-key", r.Header.Get("Authorization"))
+		}
+
+		// Verify camelCase JSON tags are on the wire (grant is a sibling of
+		// create-subscription; the whole checkout surface uses camelCase).
+		var raw map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if raw["userId"] != "u_123" {
+			t.Errorf("userId = %v, want u_123", raw["userId"])
+		}
+		if raw["planId"] != "pro-monthly" {
+			t.Errorf("planId = %v, want pro-monthly", raw["planId"])
+		}
+		if raw["idempotencyKey"] != "grant-2026-07-01-u_123-pro" {
+			t.Errorf("idempotencyKey = %v, want grant-2026-07-01-u_123-pro", raw["idempotencyKey"])
+		}
+		if _, snake := raw["user_id"]; snake {
+			t.Error("found snake_case user_id; grant endpoint must use camelCase")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(testResponse{
+			Code: 0,
+			Data: map[string]interface{}{
+				"subscription": map[string]interface{}{
+					"uuid":               "sub_uuid_1",
+					"planCode":           "pro-monthly",
+					"status":             "active",
+					"currentPeriodStart": "2026-07-01T00:00:00Z",
+					"currentPeriodEnd":   "2026-08-01T00:00:00Z",
+				},
+				"orderUuid": "order_uuid_1",
+			},
+		})
+	}))
+	defer server.Close()
+
+	SetConfig(&Config{
+		AccessKey: "test-key",
+		Endpoint:  server.URL,
+	})
+
+	res, err := GrantSubscription(&GrantSubscriptionRequest{
+		UserID:         "u_123",
+		PlanID:         "pro-monthly",
+		Reason:         "launch comp",
+		IdempotencyKey: "grant-2026-07-01-u_123-pro",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Subscription.UUID != "sub_uuid_1" {
+		t.Errorf("uuid = %s, want sub_uuid_1", res.Subscription.UUID)
+	}
+	if res.Subscription.Status != "active" {
+		t.Errorf("status = %s, want active", res.Subscription.Status)
+	}
+	if res.Subscription.PlanCode != "pro-monthly" {
+		t.Errorf("plan_code = %s, want pro-monthly", res.Subscription.PlanCode)
+	}
+	if res.Subscription.CurrentPeriodEnd != "2026-08-01T00:00:00Z" {
+		t.Errorf("current_period_end = %s, want 2026-08-01T00:00:00Z", res.Subscription.CurrentPeriodEnd)
+	}
+	if res.OrderUUID != "order_uuid_1" {
+		t.Errorf("order_uuid = %s, want order_uuid_1", res.OrderUUID)
+	}
+}
+
+func TestGrantSubscription_APIErrors(t *testing.T) {
+	// Each documented failure surfaces as *APIError with the matching Code.
+	cases := []struct {
+		name string
+		code int
+	}{
+		{"already active", 400403},
+		{"idempotency conflict", 400404},
+		{"plan not found", 400301},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetState()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(testResponse{
+					Code:    tc.code,
+					Message: tc.name,
+				})
+			}))
+			defer server.Close()
+
+			SetConfig(&Config{
+				AccessKey: "test-key",
+				Endpoint:  server.URL,
+			})
+
+			_, err := GrantSubscription(&GrantSubscriptionRequest{
+				UserID:         "u_123",
+				PlanID:         "pro-monthly",
+				IdempotencyKey: "grant-key",
+			})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("expected *APIError, got %T", err)
+			}
+			if apiErr.Code != tc.code {
+				t.Errorf("code = %d, want %d", apiErr.Code, tc.code)
+			}
+		})
 	}
 }
