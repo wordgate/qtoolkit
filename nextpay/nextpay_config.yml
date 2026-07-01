@@ -3,7 +3,8 @@
 
 nextpay:
   # API access key (required)
-  # Obtain from NextPay dashboard
+  # Sent as the X-Access-Key header on every request.
+  # Obtain from the NextPay dashboard.
   access_key: "YOUR_NEXTPAY_ACCESS_KEY"
 
   # API endpoint (optional, defaults to production)
@@ -14,37 +15,53 @@ nextpay:
 
 # Usage Examples:
 #
-#   // Create subscription
-#   result, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
-#       UserID:     "user123",
-#       PlanID:     "plan_monthly",
-#       SuccessURL: "https://example.com/success",
-#       CancelURL:  "https://example.com/cancel",
-#   })
-#
-#   // Create one-time payment ($9.99)
+#   // One-time payment ($9.99)
 #   result, err := nextpay.CreateOrder(&nextpay.OrderRequest{
-#       UserID:   "user123",
-#       Amount:   999,  // in cents
-#       Currency: "USD",
+#       UserID:      "user123",
+#       Email:       "user@example.com",
+#       ProductName: "Premium",
+#       Amount:      999, // in cents
 #   })
 #
-#   // Query subscriptions
-#   subs, err := nextpay.GetSubscriptions("user123")
+#   // Subscription checkout (plan referenced by its stable code)
+#   result, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
+#       UserID: "user123",
+#       Email:  "user@example.com",
+#       Code:   "pro-monthly",
+#   })
 #
-#   // Usage-based billing
+#   // Grant a comped subscription (no first payment; idempotent)
+#   g, err := nextpay.GrantSubscription(&nextpay.GrantSubscriptionRequest{
+#       UserID:         "user123",
+#       Code:           "pro-monthly",
+#       IdempotencyKey: "grant-2026-07-01-user123-pro",
+#   })
+#
+#   // Plan management (CRUD)
+#   plans, err := nextpay.ListPlans(false /* includeInactive */)
+#   plan,  err := nextpay.CreatePlan(&nextpay.CreatePlanRequest{
+#       Code: "pro-monthly", Name: "Pro", Amount: 999, IntervalType: "month",
+#   })
+#   err = nextpay.UpdatePlan("pro-monthly", &nextpay.UpdatePlanRequest{ /* ... */ })
+#   err = nextpay.DeletePlan("pro-monthly")
+#
+#   // Query
+#   subs, err := nextpay.GetSubscriptions("user123")
+#   sub,  err := nextpay.GetSubscription("sub_uuid")
+#
+#   // Usage-based (post-paid) billing
 #   nextpay.CreatePendingCharge(&nextpay.PendingChargeRequest{
-#       SubscriptionID: "sub_123",
+#       SubscriptionID: "sub_uuid",
 #       Amount:         500,
 #       Description:    "API usage",
 #   })
 #
 #   // Auto-recharge contract
 #   nextpay.CreateRechargeContract(&nextpay.RechargeContractRequest{
-#       UserID:     "user123",
-#       MaxAmount:  10000,  // max $100 per charge
-#       SuccessURL: "https://example.com/success",
-#       CancelURL:  "https://example.com/cancel",
+#       UserID:        "user123",
+#       Email:         "user@example.com",
+#       DefaultAmount: 10000, // in cents
+#       OrderUUID:     "ord_uuid",
 #   })
 
 # Supported Payment Methods:
@@ -58,4 +75,3 @@ nextpay:
 
 # Security Notes:
 # - Never commit real API keys to version control
-# - Use environment variables for production
