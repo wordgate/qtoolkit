@@ -8,6 +8,9 @@
 // header. (The server treats Authorization: Bearer as a JWT, which is a
 // different auth path — do not use it here.)
 //
+// Every network call takes a context.Context as its first argument, so callers
+// control per-request deadlines, cancellation and tracing.
+//
 // Conventions that mirror the server contract:
 //   - All amounts are unsigned integers in the smallest currency unit (cents).
 //   - Timestamps are Unix seconds (int64), except the grant response, whose
@@ -18,38 +21,41 @@
 //
 // Usage:
 //
+//	ctx := context.Background()
+//
 //	// One-time payment
-//	res, err := nextpay.CreateOrder(&nextpay.OrderRequest{
+//	res, err := nextpay.CreateOrder(ctx, &nextpay.OrderRequest{
 //	    UserID: "user123", Email: "u@example.com",
 //	    ProductName: "Premium", Amount: 999, // $9.99
 //	})
 //
 //	// Subscription checkout
-//	res, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
+//	res, err := nextpay.CreateSubscription(ctx, &nextpay.SubscriptionRequest{
 //	    UserID: "user123", Email: "u@example.com", Code: "pro-monthly",
 //	})
 //
 //	// Grant a comped subscription (no first payment)
-//	g, err := nextpay.GrantSubscription(&nextpay.GrantSubscriptionRequest{
+//	g, err := nextpay.GrantSubscription(ctx, &nextpay.GrantSubscriptionRequest{
 //	    UserID: "user123", Code: "pro-monthly",
 //	    IdempotencyKey: "grant-2026-07-01-user123-pro",
 //	})
 //
 //	// Plan management
-//	plans, err := nextpay.ListPlans(false)
-//	plan,  err := nextpay.CreatePlan(&nextpay.CreatePlanRequest{
+//	plans, err := nextpay.ListPlans(ctx, false)
+//	plan,  err := nextpay.CreatePlan(ctx, &nextpay.CreatePlanRequest{
 //	    Code: "pro-monthly", Name: "Pro", Amount: 999, IntervalType: "month",
 //	})
 //
 //	// Subscription lifecycle — one call per intent:
-//	err := nextpay.SetAutoRenew("sub_123", false) // stop auto-renew, keep access to period end
-//	sub, err := nextpay.PauseSubscription("sub_123")
-//	sub, err := nextpay.ResumeSubscription("sub_123", true /* payWithWallet */)
-//	err := nextpay.CancelSubscription("sub_123")  // hard cancel now (admin/support)
+//	err := nextpay.SetAutoRenew(ctx, "sub_123", false) // stop auto-renew, keep access to period end
+//	sub, err := nextpay.PauseSubscription(ctx, "sub_123")
+//	sub, err := nextpay.ResumeSubscription(ctx, "sub_123")
+//	err := nextpay.CancelSubscription(ctx, "sub_123")  // hard cancel now (admin/support)
 package nextpay
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -497,13 +503,15 @@ type WalletTransaction struct {
 // --- Public API ---
 
 // CreateOrder creates a one-time payment order.
-func CreateOrder(req *OrderRequest) (*OrderResult, error) {
-	return do(func(c *Client) (*OrderResult, error) { return c.createOrder(req) })
+func CreateOrder(ctx context.Context, req *OrderRequest) (*OrderResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*OrderResult, error) { return c.createOrder(ctx, req) })
 }
 
 // CreateSubscription creates a subscription checkout order.
-func CreateSubscription(req *SubscriptionRequest) (*SubscriptionResult, error) {
-	return do(func(c *Client) (*SubscriptionResult, error) { return c.createSubscription(req) })
+func CreateSubscription(ctx context.Context, req *SubscriptionRequest) (*SubscriptionResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*SubscriptionResult, error) {
+		return c.createSubscription(ctx, req)
+	})
 }
 
 // GrantSubscription directly grants a user an active subscription with no first
@@ -529,64 +537,70 @@ func CreateSubscription(req *SubscriptionRequest) (*SubscriptionResult, error) {
 //   - 400404: the idempotency key was reused with different parameters
 //   - 400403: the user already has an active subscription to this plan
 //   - 400301: the plan does not exist
-func GrantSubscription(req *GrantSubscriptionRequest) (*GrantResult, error) {
-	return do(func(c *Client) (*GrantResult, error) { return c.grantSubscription(req) })
+func GrantSubscription(ctx context.Context, req *GrantSubscriptionRequest) (*GrantResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*GrantResult, error) { return c.grantSubscription(ctx, req) })
 }
 
 // GetOrders returns the first page of orders for a user.
-func GetOrders(userID string) ([]Order, error) {
-	return do(func(c *Client) ([]Order, error) { return c.getOrders(userID) })
+func GetOrders(ctx context.Context, userID string) ([]Order, error) {
+	return do(ctx, func(ctx context.Context, c *Client) ([]Order, error) { return c.getOrders(ctx, userID) })
 }
 
 // GetOrder returns a single order by its uuid.
-func GetOrder(orderUUID string) (*Order, error) {
-	return do(func(c *Client) (*Order, error) { return c.getOrder(orderUUID) })
+func GetOrder(ctx context.Context, orderUUID string) (*Order, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Order, error) { return c.getOrder(ctx, orderUUID) })
 }
 
 // ListPlans returns the app's plans. When includeInactive is false only active
 // plans are returned.
-func ListPlans(includeInactive bool) ([]Plan, error) {
-	return do(func(c *Client) ([]Plan, error) { return c.listPlans(includeInactive) })
+func ListPlans(ctx context.Context, includeInactive bool) ([]Plan, error) {
+	return do(ctx, func(ctx context.Context, c *Client) ([]Plan, error) { return c.listPlans(ctx, includeInactive) })
 }
 
 // GetPlan returns a single plan by its code.
-func GetPlan(code string) (*Plan, error) {
-	return do(func(c *Client) (*Plan, error) { return c.getPlan(code) })
+func GetPlan(ctx context.Context, code string) (*Plan, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Plan, error) { return c.getPlan(ctx, code) })
 }
 
 // CreatePlan creates or upserts a plan. When req.Code is set, an existing plan
 // with that code is updated (idempotent upsert); otherwise a new plan is created.
-func CreatePlan(req *CreatePlanRequest) (*Plan, error) {
-	return do(func(c *Client) (*Plan, error) { return c.createPlan(req) })
+func CreatePlan(ctx context.Context, req *CreatePlanRequest) (*Plan, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Plan, error) { return c.createPlan(ctx, req) })
 }
 
 // UpdatePlan patches a plan identified by its code.
-func UpdatePlan(code string, req *UpdatePlanRequest) error {
-	_, err := do(func(c *Client) (struct{}, error) { return struct{}{}, c.updatePlan(code, req) })
+func UpdatePlan(ctx context.Context, code string, req *UpdatePlanRequest) error {
+	_, err := do(ctx, func(ctx context.Context, c *Client) (struct{}, error) {
+		return struct{}{}, c.updatePlan(ctx, code, req)
+	})
 	return err
 }
 
 // DeletePlan soft-deletes a plan identified by its code.
-func DeletePlan(code string) error {
-	_, err := do(func(c *Client) (struct{}, error) { return struct{}{}, c.deletePlan(code) })
+func DeletePlan(ctx context.Context, code string) error {
+	_, err := do(ctx, func(ctx context.Context, c *Client) (struct{}, error) { return struct{}{}, c.deletePlan(ctx, code) })
 	return err
 }
 
 // GetSubscriptions returns the first page of subscriptions for a user.
-func GetSubscriptions(userID string) ([]Subscription, error) {
-	return do(func(c *Client) ([]Subscription, error) { return c.getSubscriptions(userID) })
+func GetSubscriptions(ctx context.Context, userID string) ([]Subscription, error) {
+	return do(ctx, func(ctx context.Context, c *Client) ([]Subscription, error) { return c.getSubscriptions(ctx, userID) })
 }
 
 // GetSubscription returns a single subscription by its uuid.
-func GetSubscription(subscriptionUUID string) (*Subscription, error) {
-	return do(func(c *Client) (*Subscription, error) { return c.getSubscription(subscriptionUUID) })
+func GetSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Subscription, error) {
+		return c.getSubscription(ctx, subscriptionUUID)
+	})
 }
 
 // SetAutoRenew enables or disables automatic renewal for a subscription.
 // Passing false turns off auto-renew (cancel at period end); access is kept
 // until the current period ends.
-func SetAutoRenew(subscriptionUUID string, enabled bool) error {
-	_, err := do(func(c *Client) (struct{}, error) { return struct{}{}, c.setAutoRenew(subscriptionUUID, enabled) })
+func SetAutoRenew(ctx context.Context, subscriptionUUID string, enabled bool) error {
+	_, err := do(ctx, func(ctx context.Context, c *Client) (struct{}, error) {
+		return struct{}{}, c.setAutoRenew(ctx, subscriptionUUID, enabled)
+	})
 	return err
 }
 
@@ -596,99 +610,125 @@ func SetAutoRenew(subscriptionUUID string, enabled bool) error {
 // (refund, fraud, account deletion). For everyday customer flows prefer:
 //   - SetAutoRenew(id, false): stop auto-renew, keep access until period end
 //   - PauseSubscription(id):   suspend with the option to resume later
-func CancelSubscription(subscriptionUUID string) error {
-	_, err := do(func(c *Client) (struct{}, error) { return struct{}{}, c.cancelSubscription(subscriptionUUID) })
+func CancelSubscription(ctx context.Context, subscriptionUUID string) error {
+	_, err := do(ctx, func(ctx context.Context, c *Client) (struct{}, error) {
+		return struct{}{}, c.cancelSubscription(ctx, subscriptionUUID)
+	})
 	return err
 }
 
 // PauseSubscription pauses an active subscription.
-func PauseSubscription(subscriptionUUID string) (*Subscription, error) {
-	return do(func(c *Client) (*Subscription, error) { return c.pauseSubscription(subscriptionUUID) })
+func PauseSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Subscription, error) {
+		return c.pauseSubscription(ctx, subscriptionUUID)
+	})
 }
 
-// ResumeSubscription resumes a paused subscription.
-func ResumeSubscription(subscriptionUUID string, payWithWallet bool) (*Subscription, error) {
-	return do(func(c *Client) (*Subscription, error) { return c.resumeSubscription(subscriptionUUID, payWithWallet) })
+// ResumeSubscription resumes a paused subscription (or clears a pending
+// pause-at-period-end). If the current period has already expired the server
+// asks the caller to renew manually via RenewSubscription.
+func ResumeSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*Subscription, error) {
+		return c.resumeSubscription(ctx, subscriptionUUID)
+	})
 }
 
 // RenewSubscription creates a manual renewal order and returns its payment URL.
-func RenewSubscription(subscriptionUUID string) (*RenewResult, error) {
-	return do(func(c *Client) (*RenewResult, error) { return c.renewSubscription(subscriptionUUID) })
+func RenewSubscription(ctx context.Context, subscriptionUUID string) (*RenewResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*RenewResult, error) {
+		return c.renewSubscription(ctx, subscriptionUUID)
+	})
 }
 
 // CreatePendingCharge creates a post-paid charge for a subscription.
-func CreatePendingCharge(req *PendingChargeRequest) (*PendingChargeResult, error) {
-	return do(func(c *Client) (*PendingChargeResult, error) { return c.createPendingCharge(req) })
+func CreatePendingCharge(ctx context.Context, req *PendingChargeRequest) (*PendingChargeResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*PendingChargeResult, error) {
+		return c.createPendingCharge(ctx, req)
+	})
 }
 
 // GetPendingCharges returns the first page of pending charges for a subscription.
-func GetPendingCharges(subscriptionUUID string) ([]PendingCharge, error) {
-	return do(func(c *Client) ([]PendingCharge, error) { return c.getPendingCharges(subscriptionUUID) })
+func GetPendingCharges(ctx context.Context, subscriptionUUID string) ([]PendingCharge, error) {
+	return do(ctx, func(ctx context.Context, c *Client) ([]PendingCharge, error) {
+		return c.getPendingCharges(ctx, subscriptionUUID)
+	})
 }
 
 // GetPendingCharge returns a single pending charge by its uuid.
-func GetPendingCharge(chargeUUID string) (*PendingCharge, error) {
-	return do(func(c *Client) (*PendingCharge, error) { return c.getPendingCharge(chargeUUID) })
+func GetPendingCharge(ctx context.Context, chargeUUID string) (*PendingCharge, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*PendingCharge, error) {
+		return c.getPendingCharge(ctx, chargeUUID)
+	})
 }
 
 // CreateRechargeContract creates a new auto-recharge contract.
-func CreateRechargeContract(req *RechargeContractRequest) (*RechargeContractResult, error) {
-	return do(func(c *Client) (*RechargeContractResult, error) { return c.createRechargeContract(req) })
+func CreateRechargeContract(ctx context.Context, req *RechargeContractRequest) (*RechargeContractResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*RechargeContractResult, error) {
+		return c.createRechargeContract(ctx, req)
+	})
 }
 
 // GetRechargeContract returns a recharge contract by its uuid.
-func GetRechargeContract(contractUUID string) (*RechargeContract, error) {
-	return do(func(c *Client) (*RechargeContract, error) { return c.getRechargeContract(contractUUID) })
+func GetRechargeContract(ctx context.Context, contractUUID string) (*RechargeContract, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*RechargeContract, error) {
+		return c.getRechargeContract(ctx, contractUUID)
+	})
 }
 
 // ChargeContract executes a charge against a contract.
-func ChargeContract(contractUUID string, req *ChargeRequest) (*ChargeResult, error) {
-	return do(func(c *Client) (*ChargeResult, error) { return c.chargeContract(contractUUID, req) })
+func ChargeContract(ctx context.Context, contractUUID string, req *ChargeRequest) (*ChargeResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*ChargeResult, error) {
+		return c.chargeContract(ctx, contractUUID, req)
+	})
 }
 
 // CancelRechargeContract cancels a recharge contract.
-func CancelRechargeContract(contractUUID string) error {
-	_, err := do(func(c *Client) (struct{}, error) { return struct{}{}, c.cancelRechargeContract(contractUUID) })
+func CancelRechargeContract(ctx context.Context, contractUUID string) error {
+	_, err := do(ctx, func(ctx context.Context, c *Client) (struct{}, error) {
+		return struct{}{}, c.cancelRechargeContract(ctx, contractUUID)
+	})
 	return err
 }
 
 // WalletDeposit credits a user's wallet (creating the user on demand).
-func WalletDeposit(req *WalletDepositRequest) (*WalletOperation, error) {
-	return do(func(c *Client) (*WalletOperation, error) { return c.walletDeposit(req) })
+func WalletDeposit(ctx context.Context, req *WalletDepositRequest) (*WalletOperation, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*WalletOperation, error) { return c.walletDeposit(ctx, req) })
 }
 
 // WalletDeduct debits a user's wallet.
-func WalletDeduct(req *WalletDeductRequest) (*WalletOperation, error) {
-	return do(func(c *Client) (*WalletOperation, error) { return c.walletDeduct(req) })
+func WalletDeduct(ctx context.Context, req *WalletDeductRequest) (*WalletOperation, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*WalletOperation, error) { return c.walletDeduct(ctx, req) })
 }
 
 // GetWalletBalance returns a user's wallet balance. userID is the app-side user id.
-func GetWalletBalance(userID string) (*WalletBalance, error) {
-	return do(func(c *Client) (*WalletBalance, error) { return c.walletBalance(userID) })
+func GetWalletBalance(ctx context.Context, userID string) (*WalletBalance, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*WalletBalance, error) { return c.walletBalance(ctx, userID) })
 }
 
 // GetWalletTransactions returns the first page of a user's wallet ledger. userID
 // is the app-side user id.
-func GetWalletTransactions(userID string) ([]WalletTransaction, error) {
-	return do(func(c *Client) ([]WalletTransaction, error) { return c.walletTransactions(userID) })
+func GetWalletTransactions(ctx context.Context, userID string) ([]WalletTransaction, error) {
+	return do(ctx, func(ctx context.Context, c *Client) ([]WalletTransaction, error) {
+		return c.walletTransactions(ctx, userID)
+	})
 }
 
 // --- Transport ---
 
 // do resolves the client and runs fn, so every public method shares one
 // initialization + error path.
-func do[T any](fn func(*Client) (T, error)) (T, error) {
+func do[T any](ctx context.Context, fn func(context.Context, *Client) (T, error)) (T, error) {
 	var zero T
 	client, err := Get()
 	if err != nil {
 		return zero, err
 	}
-	return fn(client)
+	return fn(ctx, client)
 }
 
 // doRequest performs an authenticated request and returns the decoded envelope.
 // A non-zero response code is mapped to *APIError.
-func (c *Client) doRequest(method, path string, body any) (*Response, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, body any) (*Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -698,7 +738,7 @@ func (c *Client) doRequest(method, path string, body any) (*Response, error) {
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.config.Endpoint+path, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, c.config.Endpoint+path, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -756,24 +796,24 @@ func decodeItems[T any](raw json.RawMessage) ([]T, error) {
 
 // --- Client methods: checkout ---
 
-func (c *Client) createOrder(req *OrderRequest) (*OrderResult, error) {
-	resp, err := c.doRequest("POST", "/api/checkout/order", req)
+func (c *Client) createOrder(ctx context.Context, req *OrderRequest) (*OrderResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/checkout/order", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[OrderResult](resp.Data)
 }
 
-func (c *Client) createSubscription(req *SubscriptionRequest) (*SubscriptionResult, error) {
-	resp, err := c.doRequest("POST", "/api/checkout/subscription", req)
+func (c *Client) createSubscription(ctx context.Context, req *SubscriptionRequest) (*SubscriptionResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/checkout/subscription", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[SubscriptionResult](resp.Data)
 }
 
-func (c *Client) grantSubscription(req *GrantSubscriptionRequest) (*GrantResult, error) {
-	resp, err := c.doRequest("POST", "/api/checkout/subscription/grant", req)
+func (c *Client) grantSubscription(ctx context.Context, req *GrantSubscriptionRequest) (*GrantResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/checkout/subscription/grant", req)
 	if err != nil {
 		return nil, err
 	}
@@ -782,16 +822,16 @@ func (c *Client) grantSubscription(req *GrantSubscriptionRequest) (*GrantResult,
 
 // --- Client methods: orders ---
 
-func (c *Client) getOrders(userID string) ([]Order, error) {
-	resp, err := c.doRequest("GET", "/api/users/"+url.PathEscape(userID)+"/orders?pageSize=100", nil)
+func (c *Client) getOrders(ctx context.Context, userID string) ([]Order, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/users/"+url.PathEscape(userID)+"/orders?pageSize=100", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[Order](resp.Data)
 }
 
-func (c *Client) getOrder(orderUUID string) (*Order, error) {
-	resp, err := c.doRequest("GET", "/api/orders/"+url.PathEscape(orderUUID), nil)
+func (c *Client) getOrder(ctx context.Context, orderUUID string) (*Order, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/orders/"+url.PathEscape(orderUUID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -800,95 +840,94 @@ func (c *Client) getOrder(orderUUID string) (*Order, error) {
 
 // --- Client methods: plans ---
 
-func (c *Client) listPlans(includeInactive bool) ([]Plan, error) {
+func (c *Client) listPlans(ctx context.Context, includeInactive bool) ([]Plan, error) {
 	path := "/api/plans"
 	if includeInactive {
 		path += "?activeOnly=false"
 	}
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[Plan](resp.Data)
 }
 
-func (c *Client) getPlan(code string) (*Plan, error) {
-	resp, err := c.doRequest("GET", "/api/plans/"+url.PathEscape(code), nil)
+func (c *Client) getPlan(ctx context.Context, code string) (*Plan, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/plans/"+url.PathEscape(code), nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[Plan](resp.Data)
 }
 
-func (c *Client) createPlan(req *CreatePlanRequest) (*Plan, error) {
-	resp, err := c.doRequest("POST", "/api/plans", req)
+func (c *Client) createPlan(ctx context.Context, req *CreatePlanRequest) (*Plan, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/plans", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[Plan](resp.Data)
 }
 
-func (c *Client) updatePlan(code string, req *UpdatePlanRequest) error {
-	_, err := c.doRequest("PUT", "/api/plans/"+url.PathEscape(code), req)
+func (c *Client) updatePlan(ctx context.Context, code string, req *UpdatePlanRequest) error {
+	_, err := c.doRequest(ctx, "PUT", "/api/plans/"+url.PathEscape(code), req)
 	return err
 }
 
-func (c *Client) deletePlan(code string) error {
-	_, err := c.doRequest("DELETE", "/api/plans/"+url.PathEscape(code), nil)
+func (c *Client) deletePlan(ctx context.Context, code string) error {
+	_, err := c.doRequest(ctx, "DELETE", "/api/plans/"+url.PathEscape(code), nil)
 	return err
 }
 
 // --- Client methods: subscriptions ---
 
-func (c *Client) getSubscriptions(userID string) ([]Subscription, error) {
-	resp, err := c.doRequest("GET", "/api/users/"+url.PathEscape(userID)+"/subscriptions?pageSize=100", nil)
+func (c *Client) getSubscriptions(ctx context.Context, userID string) ([]Subscription, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/users/"+url.PathEscape(userID)+"/subscriptions?pageSize=100", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[Subscription](resp.Data)
 }
 
-func (c *Client) getSubscription(subscriptionUUID string) (*Subscription, error) {
-	resp, err := c.doRequest("GET", "/api/subscriptions/"+url.PathEscape(subscriptionUUID), nil)
+func (c *Client) getSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/subscriptions/"+url.PathEscape(subscriptionUUID), nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[Subscription](resp.Data)
 }
 
-func (c *Client) setAutoRenew(subscriptionUUID string, enabled bool) error {
-	_, err := c.doRequest("POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/auto-renew",
+func (c *Client) setAutoRenew(ctx context.Context, subscriptionUUID string, enabled bool) error {
+	_, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/auto-renew",
 		map[string]any{"enabled": enabled})
 	return err
 }
 
-func (c *Client) cancelSubscription(subscriptionUUID string) error {
+func (c *Client) cancelSubscription(ctx context.Context, subscriptionUUID string) error {
 	// cancelAtPeriodEnd=false -> terminate immediately. The "cancel at period
 	// end" intent is owned solely by SetAutoRenew(id, false).
-	_, err := c.doRequest("POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/cancel",
+	_, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/cancel",
 		map[string]any{"cancelAtPeriodEnd": false})
 	return err
 }
 
-func (c *Client) pauseSubscription(subscriptionUUID string) (*Subscription, error) {
-	resp, err := c.doRequest("POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/pause", nil)
+func (c *Client) pauseSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/pause", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[Subscription](resp.Data)
 }
 
-func (c *Client) resumeSubscription(subscriptionUUID string, payWithWallet bool) (*Subscription, error) {
-	resp, err := c.doRequest("POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/resume",
-		map[string]any{"payWithWallet": payWithWallet})
+func (c *Client) resumeSubscription(ctx context.Context, subscriptionUUID string) (*Subscription, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/resume", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[Subscription](resp.Data)
 }
 
-func (c *Client) renewSubscription(subscriptionUUID string) (*RenewResult, error) {
-	resp, err := c.doRequest("POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/renew", nil)
+func (c *Client) renewSubscription(ctx context.Context, subscriptionUUID string) (*RenewResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/renew", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -897,24 +936,25 @@ func (c *Client) renewSubscription(subscriptionUUID string) (*RenewResult, error
 
 // --- Client methods: billing (post-paid) ---
 
-func (c *Client) createPendingCharge(req *PendingChargeRequest) (*PendingChargeResult, error) {
-	resp, err := c.doRequest("POST", "/api/billing/pending-charges", req)
+func (c *Client) createPendingCharge(ctx context.Context, req *PendingChargeRequest) (*PendingChargeResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/billing/pending-charges", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[PendingChargeResult](resp.Data)
 }
 
-func (c *Client) getPendingCharges(subscriptionUUID string) ([]PendingCharge, error) {
-	resp, err := c.doRequest("GET", "/api/billing/pending-charges?"+listQuery("subscriptionId", subscriptionUUID), nil)
+func (c *Client) getPendingCharges(ctx context.Context, subscriptionUUID string) ([]PendingCharge, error) {
+	resp, err := c.doRequest(ctx, "GET",
+		"/api/billing/pending-charges?subscriptionId="+url.QueryEscape(subscriptionUUID)+"&pageSize=100", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[PendingCharge](resp.Data)
 }
 
-func (c *Client) getPendingCharge(chargeUUID string) (*PendingCharge, error) {
-	resp, err := c.doRequest("GET", "/api/billing/pending-charges/"+url.PathEscape(chargeUUID), nil)
+func (c *Client) getPendingCharge(ctx context.Context, chargeUUID string) (*PendingCharge, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/billing/pending-charges/"+url.PathEscape(chargeUUID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -923,32 +963,32 @@ func (c *Client) getPendingCharge(chargeUUID string) (*PendingCharge, error) {
 
 // --- Client methods: recharge contracts ---
 
-func (c *Client) createRechargeContract(req *RechargeContractRequest) (*RechargeContractResult, error) {
-	resp, err := c.doRequest("POST", "/api/recharge-contracts", req)
+func (c *Client) createRechargeContract(ctx context.Context, req *RechargeContractRequest) (*RechargeContractResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/recharge-contracts", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[RechargeContractResult](resp.Data)
 }
 
-func (c *Client) getRechargeContract(contractUUID string) (*RechargeContract, error) {
-	resp, err := c.doRequest("GET", "/api/recharge-contracts/"+url.PathEscape(contractUUID), nil)
+func (c *Client) getRechargeContract(ctx context.Context, contractUUID string) (*RechargeContract, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/recharge-contracts/"+url.PathEscape(contractUUID), nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[RechargeContract](resp.Data)
 }
 
-func (c *Client) chargeContract(contractUUID string, req *ChargeRequest) (*ChargeResult, error) {
-	resp, err := c.doRequest("POST", "/api/recharge-contracts/"+url.PathEscape(contractUUID)+"/charge", req)
+func (c *Client) chargeContract(ctx context.Context, contractUUID string, req *ChargeRequest) (*ChargeResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/recharge-contracts/"+url.PathEscape(contractUUID)+"/charge", req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[ChargeResult](resp.Data)
 }
 
-func (c *Client) cancelRechargeContract(contractUUID string) error {
-	_, err := c.doRequest("DELETE", "/api/recharge-contracts/"+url.PathEscape(contractUUID), nil)
+func (c *Client) cancelRechargeContract(ctx context.Context, contractUUID string) error {
+	_, err := c.doRequest(ctx, "DELETE", "/api/recharge-contracts/"+url.PathEscape(contractUUID), nil)
 	return err
 }
 
@@ -960,45 +1000,34 @@ func walletPath(userID, action string) string {
 	return "/api/users/" + url.PathEscape(userID) + "/wallet/" + action
 }
 
-func (c *Client) walletDeposit(req *WalletDepositRequest) (*WalletOperation, error) {
-	resp, err := c.doRequest("POST", walletPath(req.UserID, "deposit"), req)
+func (c *Client) walletDeposit(ctx context.Context, req *WalletDepositRequest) (*WalletOperation, error) {
+	resp, err := c.doRequest(ctx, "POST", walletPath(req.UserID, "deposit"), req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[WalletOperation](resp.Data)
 }
 
-func (c *Client) walletDeduct(req *WalletDeductRequest) (*WalletOperation, error) {
-	resp, err := c.doRequest("POST", walletPath(req.UserID, "deduct"), req)
+func (c *Client) walletDeduct(ctx context.Context, req *WalletDeductRequest) (*WalletOperation, error) {
+	resp, err := c.doRequest(ctx, "POST", walletPath(req.UserID, "deduct"), req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[WalletOperation](resp.Data)
 }
 
-func (c *Client) walletBalance(userID string) (*WalletBalance, error) {
-	resp, err := c.doRequest("GET", walletPath(userID, "balance"), nil)
+func (c *Client) walletBalance(ctx context.Context, userID string) (*WalletBalance, error) {
+	resp, err := c.doRequest(ctx, "GET", walletPath(userID, "balance"), nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeData[WalletBalance](resp.Data)
 }
 
-func (c *Client) walletTransactions(userID string) ([]WalletTransaction, error) {
-	resp, err := c.doRequest("GET", walletPath(userID, "transactions")+"?pageSize=100", nil)
+func (c *Client) walletTransactions(ctx context.Context, userID string) ([]WalletTransaction, error) {
+	resp, err := c.doRequest(ctx, "GET", walletPath(userID, "transactions")+"?pageSize=100", nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[WalletTransaction](resp.Data)
-}
-
-// listQuery builds a filtered list query with the max page size, so a single
-// call returns as many items as the server allows in one page (100).
-func listQuery(key, value string) string {
-	q := url.Values{}
-	if value != "" {
-		q.Set(key, value)
-	}
-	q.Set("pageSize", "100")
-	return q.Encode()
 }

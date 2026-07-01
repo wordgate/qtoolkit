@@ -80,7 +80,7 @@ func TestCreateOrder_Success(t *testing.T) {
 		"orderId": "ord_1", "paymentUrl": "https://pay/ord_1", "amount": 999, "currency": "usd", "productName": "Premium",
 	}})()
 
-	res, err := CreateOrder(&OrderRequest{UserID: "user123", Email: "u@example.com", ProductName: "Premium", Amount: 999})
+	res, err := CreateOrder(t.Context(), &OrderRequest{UserID: "user123", Email: "u@example.com", ProductName: "Premium", Amount: 999})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestCreateSubscription_Success(t *testing.T) {
 		"plan": map[string]any{"code": "pro-monthly", "name": "Pro"},
 	}})()
 
-	res, err := CreateSubscription(&SubscriptionRequest{UserID: "user123", Email: "u@example.com", Code: "pro-monthly"})
+	res, err := CreateSubscription(t.Context(), &SubscriptionRequest{UserID: "user123", Email: "u@example.com", Code: "pro-monthly"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestGrantSubscription_Success(t *testing.T) {
 		"orderUuid": "order_uuid_1",
 	}})()
 
-	res, err := GrantSubscription(&GrantSubscriptionRequest{UserID: "u_123", Code: "pro-monthly", IdempotencyKey: "grant-key"})
+	res, err := GrantSubscription(t.Context(), &GrantSubscriptionRequest{UserID: "u_123", Code: "pro-monthly", IdempotencyKey: "grant-key"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestGrantSubscription_APIErrors(t *testing.T) {
 			resetState()
 			defer mock(t, nil, testResponse{Code: tc.code, Message: tc.name})()
 
-			_, err := GrantSubscription(&GrantSubscriptionRequest{UserID: "u_123", Code: "pro-monthly", IdempotencyKey: "k"})
+			_, err := GrantSubscription(t.Context(), &GrantSubscriptionRequest{UserID: "u_123", Code: "pro-monthly", IdempotencyKey: "k"})
 			var apiErr *APIError
 			if !errors.As(err, &apiErr) {
 				t.Fatalf("expected *APIError, got %T (%v)", err, err)
@@ -196,7 +196,7 @@ func TestGetOrders_Success(t *testing.T) {
 		map[string]any{"uuid": "ord_1", "status": "paid", "amount": 999},
 	)})()
 
-	orders, err := GetOrders("user123")
+	orders, err := GetOrders(t.Context(), "user123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestGetOrder_Success(t *testing.T) {
 		"user": map[string]any{"userId": "user123", "email": "u@example.com"},
 	}})()
 
-	order, err := GetOrder("ord_1")
+	order, err := GetOrder(t.Context(), "ord_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestListPlans_ActiveOnly(t *testing.T) {
 		map[string]any{"code": "pro-monthly", "name": "Pro", "amount": 999, "intervalType": "month", "isActive": true},
 	)})()
 
-	plans, err := ListPlans(false)
+	plans, err := ListPlans(t.Context(), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestListPlans_IncludeInactive(t *testing.T) {
 		}
 	}, testResponse{Data: items()})()
 
-	if _, err := ListPlans(true); err != nil {
+	if _, err := ListPlans(t.Context(), true); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -274,7 +274,7 @@ func TestGetPlan_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"code": "pro-monthly", "name": "Pro", "amount": 999, "intervalType": "month"}})()
 
-	plan, err := GetPlan("pro-monthly")
+	plan, err := GetPlan(t.Context(), "pro-monthly")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestCreatePlan_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"code": "pro-monthly", "name": "Pro", "amount": 999, "intervalType": "month", "isActive": true}})()
 
-	plan, err := CreatePlan(&CreatePlanRequest{Code: "pro-monthly", Name: "Pro", Amount: 999, IntervalType: "month"})
+	plan, err := CreatePlan(t.Context(), &CreatePlanRequest{Code: "pro-monthly", Name: "Pro", Amount: 999, IntervalType: "month"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestUpdatePlan_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{}})()
 
-	if err := UpdatePlan("pro-monthly", &UpdatePlanRequest{Amount: &newAmount, IsActive: &inactive}); err != nil {
+	if err := UpdatePlan(t.Context(), "pro-monthly", &UpdatePlanRequest{Amount: &newAmount, IsActive: &inactive}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -341,7 +341,7 @@ func TestDeletePlan_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{}})()
 
-	if err := DeletePlan("pro-monthly"); err != nil {
+	if err := DeletePlan(t.Context(), "pro-monthly"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -350,7 +350,7 @@ func TestGetPlan_NotFound(t *testing.T) {
 	resetState()
 	defer mock(t, nil, testResponse{Code: 404, Message: "plan not found"})()
 
-	_, err := GetPlan("nope")
+	_, err := GetPlan(t.Context(), "nope")
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != 404 {
 		t.Fatalf("expected *APIError 404, got %v", err)
@@ -373,7 +373,7 @@ func TestGetSubscriptions_Success(t *testing.T) {
 		},
 	)})()
 
-	subs, err := GetSubscriptions("user123")
+	subs, err := GetSubscriptions(t.Context(), "user123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestGetSubscription_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"uuid": "sub_1", "status": "active"}})()
 
-	sub, err := GetSubscription("sub_1")
+	sub, err := GetSubscription(t.Context(), "sub_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestSetAutoRenew_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{}})()
 
-	if err := SetAutoRenew("sub_1", false); err != nil {
+	if err := SetAutoRenew(t.Context(), "sub_1", false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -430,7 +430,7 @@ func TestSetAutoRenew_APIError(t *testing.T) {
 	resetState()
 	defer mock(t, nil, testResponse{Code: 404, Message: "subscription not found"})()
 
-	err := SetAutoRenew("sub_404", false)
+	err := SetAutoRenew(t.Context(), "sub_404", false)
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != 404 {
 		t.Fatalf("expected *APIError 404, got %v", err)
@@ -444,13 +444,13 @@ func TestCancelSubscription_Success(t *testing.T) {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		body := decodeBody(t, r)
-		// Immediate-only; "cancel at period end" is SetAutoRenew(id,false)'s job.
+		// Immediate-only; "cancel at period end" is SetAutoRenew(t.Context(), id,false)'s job.
 		if body["cancelAtPeriodEnd"] != false {
 			t.Errorf("cancelAtPeriodEnd = %v, want false", body["cancelAtPeriodEnd"])
 		}
 	}, testResponse{Data: map[string]any{}})()
 
-	if err := CancelSubscription("sub_1"); err != nil {
+	if err := CancelSubscription(t.Context(), "sub_1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -466,7 +466,7 @@ func TestPauseSubscription_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"uuid": "sub_1", "status": "active", "pauseAtPeriodEnd": true, "autoRenew": true}})()
 
-	sub, err := PauseSubscription("sub_1")
+	sub, err := PauseSubscription(t.Context(), "sub_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,13 +481,9 @@ func TestResumeSubscription_Success(t *testing.T) {
 		if r.Method != "POST" || r.URL.Path != "/api/subscriptions/sub_1/resume" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
-		body := decodeBody(t, r)
-		if body["payWithWallet"] != true {
-			t.Errorf("payWithWallet = %v, want true", body["payWithWallet"])
-		}
 	}, testResponse{Data: map[string]any{"uuid": "sub_1", "status": "active", "autoRenew": false}})()
 
-	sub, err := ResumeSubscription("sub_1", true)
+	sub, err := ResumeSubscription(t.Context(), "sub_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -504,7 +500,7 @@ func TestRenewSubscription_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"orderId": "ord_r", "paymentUrl": "https://pay/ord_r"}})()
 
-	res, err := RenewSubscription("sub_1")
+	res, err := RenewSubscription(t.Context(), "sub_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -527,7 +523,7 @@ func TestCreatePendingCharge_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"chargeId": "chg_1", "subscriptionId": "sub_1", "amount": 500, "status": "pending"}})()
 
-	charge, err := CreatePendingCharge(&PendingChargeRequest{SubscriptionID: "sub_1", Amount: 500, Description: "API usage"})
+	charge, err := CreatePendingCharge(t.Context(), &PendingChargeRequest{SubscriptionID: "sub_1", Amount: 500, Description: "API usage"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -549,7 +545,7 @@ func TestGetPendingCharges_Success(t *testing.T) {
 		map[string]any{"uuid": "pc_1", "subscriptionUuid": "sub_1", "amount": 500, "status": "pending"},
 	)})()
 
-	charges, err := GetPendingCharges("sub_1")
+	charges, err := GetPendingCharges(t.Context(), "sub_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -566,7 +562,7 @@ func TestGetPendingCharge_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"uuid": "pc_1", "status": "billed"}})()
 
-	charge, err := GetPendingCharge("pc_1")
+	charge, err := GetPendingCharge(t.Context(), "pc_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -591,7 +587,7 @@ func TestCreateRechargeContract_Success(t *testing.T) {
 		"contractId": "rc_1", "status": "pending_setup", "paymentUrl": "https://pay/rc_1", "authorizationUrl": "https://auth/rc_1",
 	}})()
 
-	res, err := CreateRechargeContract(&RechargeContractRequest{
+	res, err := CreateRechargeContract(t.Context(), &RechargeContractRequest{
 		UserID: "user123", Email: "u@example.com", DefaultAmount: 10000, OrderUUID: "ord_1",
 	})
 	if err != nil {
@@ -610,7 +606,7 @@ func TestGetRechargeContract_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"uuid": "rc_1", "status": "active", "defaultAmount": 10000}})()
 
-	contract, err := GetRechargeContract("rc_1")
+	contract, err := GetRechargeContract(t.Context(), "rc_1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -631,7 +627,7 @@ func TestChargeContract_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"chargeId": "chg_9", "status": "succeeded", "amount": 500}})()
 
-	res, err := ChargeContract("rc_1", &ChargeRequest{Amount: 500, IdempotencyKey: "key_1"})
+	res, err := ChargeContract(t.Context(), "rc_1", &ChargeRequest{Amount: 500, IdempotencyKey: "key_1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -648,7 +644,7 @@ func TestCancelRechargeContract_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{}})()
 
-	if err := CancelRechargeContract("rc_1"); err != nil {
+	if err := CancelRechargeContract(t.Context(), "rc_1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -667,7 +663,7 @@ func TestWalletDeposit_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"transactionId": "tx_1", "amount": 1000, "balance": 1500}})()
 
-	res, err := WalletDeposit(&WalletDepositRequest{
+	res, err := WalletDeposit(t.Context(), &WalletDepositRequest{
 		UserID: "user123", Email: "u@example.com", Amount: 1000, IdempotencyKey: "dep_1",
 	})
 	if err != nil {
@@ -690,7 +686,7 @@ func TestWalletDeduct_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"transactionId": "tx_2", "amount": 500, "balance": 1000}})()
 
-	res, err := WalletDeduct(&WalletDeductRequest{UserID: "user123", Amount: 500, IdempotencyKey: "ded_1"})
+	res, err := WalletDeduct(t.Context(), &WalletDeductRequest{UserID: "user123", Amount: 500, IdempotencyKey: "ded_1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -703,7 +699,7 @@ func TestWalletDeduct_InsufficientBalance(t *testing.T) {
 	resetState()
 	defer mock(t, nil, testResponse{Code: 400901, Message: "insufficient balance"})()
 
-	_, err := WalletDeduct(&WalletDeductRequest{UserID: "user123", Amount: 999999, IdempotencyKey: "ded_x"})
+	_, err := WalletDeduct(t.Context(), &WalletDeductRequest{UserID: "user123", Amount: 999999, IdempotencyKey: "ded_x"})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != 400901 {
 		t.Fatalf("expected *APIError 400901, got %v", err)
@@ -718,7 +714,7 @@ func TestGetWalletBalance_Success(t *testing.T) {
 		}
 	}, testResponse{Data: map[string]any{"userId": "user123", "balance": 1500, "currency": "usd"}})()
 
-	bal, err := GetWalletBalance("user123")
+	bal, err := GetWalletBalance(t.Context(), "user123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -738,7 +734,7 @@ func TestGetWalletTransactions_Success(t *testing.T) {
 		map[string]any{"uuid": "tx_2", "type": "deduct", "amount": -500, "balanceAfter": 1000},
 	)})()
 
-	txs, err := GetWalletTransactions("user123")
+	txs, err := GetWalletTransactions(t.Context(), "user123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -751,7 +747,7 @@ func TestGetWalletTransactions_Success(t *testing.T) {
 
 func TestNotConfigured(t *testing.T) {
 	resetState()
-	if _, err := GetSubscriptions("user123"); err == nil {
+	if _, err := GetSubscriptions(t.Context(), "user123"); err == nil {
 		t.Error("expected error when not configured")
 	}
 }
@@ -764,7 +760,7 @@ func TestServerError(t *testing.T) {
 	defer server.Close()
 	SetConfig(&Config{AccessKey: "test-key", Endpoint: server.URL})
 
-	if _, err := GetSubscriptions("user123"); err == nil {
+	if _, err := GetSubscriptions(t.Context(), "user123"); err == nil {
 		t.Error("expected error on server error")
 	}
 }

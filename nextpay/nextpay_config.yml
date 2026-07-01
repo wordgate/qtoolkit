@@ -14,9 +14,12 @@ nextpay:
   # timeout: 30
 
 # Usage Examples:
+# (every network call takes a context.Context as its first argument)
+#
+#   ctx := context.Background()
 #
 #   // One-time payment ($9.99)
-#   result, err := nextpay.CreateOrder(&nextpay.OrderRequest{
+#   result, err := nextpay.CreateOrder(ctx, &nextpay.OrderRequest{
 #       UserID:      "user123",
 #       Email:       "user@example.com",
 #       ProductName: "Premium",
@@ -24,40 +27,40 @@ nextpay:
 #   })
 #
 #   // Subscription checkout (plan referenced by its stable code)
-#   result, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
+#   result, err := nextpay.CreateSubscription(ctx, &nextpay.SubscriptionRequest{
 #       UserID: "user123",
 #       Email:  "user@example.com",
 #       Code:   "pro-monthly",
 #   })
 #
 #   // Grant a comped subscription (no first payment; idempotent)
-#   g, err := nextpay.GrantSubscription(&nextpay.GrantSubscriptionRequest{
+#   g, err := nextpay.GrantSubscription(ctx, &nextpay.GrantSubscriptionRequest{
 #       UserID:         "user123",
 #       Code:           "pro-monthly",
 #       IdempotencyKey: "grant-2026-07-01-user123-pro",
 #   })
 #
 #   // Plan management (CRUD)
-#   plans, err := nextpay.ListPlans(false /* includeInactive */)
-#   plan,  err := nextpay.CreatePlan(&nextpay.CreatePlanRequest{
+#   plans, err := nextpay.ListPlans(ctx, false /* includeInactive */)
+#   plan,  err := nextpay.CreatePlan(ctx, &nextpay.CreatePlanRequest{
 #       Code: "pro-monthly", Name: "Pro", Amount: 999, IntervalType: "month",
 #   })
-#   err = nextpay.UpdatePlan("pro-monthly", &nextpay.UpdatePlanRequest{ /* ... */ })
-#   err = nextpay.DeletePlan("pro-monthly")
+#   err = nextpay.UpdatePlan(ctx, "pro-monthly", &nextpay.UpdatePlanRequest{ /* ... */ })
+#   err = nextpay.DeletePlan(ctx, "pro-monthly")
 #
 #   // Query
-#   subs, err := nextpay.GetSubscriptions("user123")
-#   sub,  err := nextpay.GetSubscription("sub_uuid")
+#   subs, err := nextpay.GetSubscriptions(ctx, "user123")
+#   sub,  err := nextpay.GetSubscription(ctx, "sub_uuid")
 #
 #   // Usage-based (post-paid) billing
-#   nextpay.CreatePendingCharge(&nextpay.PendingChargeRequest{
+#   nextpay.CreatePendingCharge(ctx, &nextpay.PendingChargeRequest{
 #       SubscriptionID: "sub_uuid",
 #       Amount:         500,
 #       Description:    "API usage",
 #   })
 #
 #   // Auto-recharge contract
-#   nextpay.CreateRechargeContract(&nextpay.RechargeContractRequest{
+#   nextpay.CreateRechargeContract(ctx, &nextpay.RechargeContractRequest{
 #       UserID:        "user123",
 #       Email:         "user@example.com",
 #       DefaultAmount: 10000, // in cents

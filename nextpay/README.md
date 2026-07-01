@@ -16,8 +16,10 @@ nextpay:
 
 ## Client
 
+Every network call takes a `context.Context` as its first argument.
+
 ```go
-result, err := nextpay.CreateSubscription(&nextpay.SubscriptionRequest{
+result, err := nextpay.CreateSubscription(ctx, &nextpay.SubscriptionRequest{
     UserID: "user123",
     Email:  "user@example.com",
     Code:   "pro-monthly", // plan referenced by its stable code
