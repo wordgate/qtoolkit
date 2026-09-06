@@ -298,7 +298,7 @@ func startScheduler() {
 
 		for _, ct := range cronTasks {
 			data, _ := marshal(ct.payload)
-			task := asynq.NewTask(ct.taskType, data, ct.opts...)
+			task := asynq.NewTask(ct.taskType, data, withTaskDefaults(ct.opts)...)
 			scheduler.Register(ct.cronspec, task)
 		}
 
@@ -354,7 +354,7 @@ func Enqueue(taskType string, payload any, opts ...Option) (*TaskInfo, error) {
 		return nil, fmt.Errorf("asynq: failed to marshal payload: %w", err)
 	}
 
-	task := asynq.NewTask(taskType, data, opts...)
+	task := asynq.NewTask(taskType, data, withTaskDefaults(opts)...)
 	return getClient().Enqueue(task)
 }
 
@@ -369,7 +369,7 @@ func EnqueueContext(ctx context.Context, taskType string, payload any, opts ...O
 		return nil, fmt.Errorf("asynq: failed to marshal payload: %w", err)
 	}
 
-	task := asynq.NewTask(taskType, data, opts...)
+	task := asynq.NewTask(taskType, data, withTaskDefaults(opts)...)
 	return getClient().EnqueueContext(ctx, task)
 }
 
@@ -408,6 +408,36 @@ func Shutdown() {
 }
 
 // marshal converts payload to JSON bytes.
+// withTaskDefaults 把配置里的 Task defaults(asynq.default_max_retry /
+// asynq.default_timeout)前置到调用方的 opts 前面。
+//
+// asynq 的 composeOptions 是顺序赋值、后者覆盖前者,所以放在最前面意味着
+// 调用方显式传的 MaxRetry/Timeout 依然优先——默认值只在没人显式指定时生效。
+//
+// 在这之前这两个配置项是死的:Config 声明了字段、loadConfig 给了默认值,但
+// 从没传进 asynq.NewTask,实际生效的一直是 hibiken/asynq 的硬默认
+// (MaxRetry=25、Timeout=30m)。写了 default_max_retry: 3 的服务实际在重试
+// 25 次,一次必然失败的任务会被重放 25 遍。
+func withTaskDefaults(opts []asynq.Option) []asynq.Option {
+	cfg := loadConfig()
+
+	// 容量按最坏情况预留,避免 append 时再扩容。
+	merged := make([]asynq.Option, 0, len(opts)+2)
+
+	// MaxRetry 的 0 是合法值(不重试),不能用 >0 过滤——loadConfig 已经保证
+	// 未配置时是默认值 3,所以这里无条件下发。负值由 asynq.MaxRetry 内部
+	// clamp 到 0。
+	merged = append(merged, asynq.MaxRetry(cfg.DefaultMaxRetry))
+
+	// Timeout 的 0 在 asynq 里是「未设置」哨兵(此时它会回退到自己的 30m
+	// 默认),所以只有正值才值得下发,传 0 与不传等价。
+	if cfg.DefaultTimeout > 0 {
+		merged = append(merged, asynq.Timeout(cfg.DefaultTimeout))
+	}
+
+	return append(merged, opts...)
+}
+
 func marshal(payload any) ([]byte, error) {
 	if payload == nil {
 		return nil, nil
