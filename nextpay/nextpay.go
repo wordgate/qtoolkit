@@ -29,6 +29,9 @@
 //	    ProductName: "Premium", Amount: 999, // $9.99
 //	})
 //
+//	// Lock the rail and get the Stripe Checkout URL (skip the hosted page)
+//	conf, err := nextpay.ConfirmPayment(ctx, res.OrderID, &nextpay.ConfirmPaymentRequest{PaymentMethod: "more"})
+//
 //	// Subscription checkout
 //	res, err := nextpay.CreateSubscription(ctx, &nextpay.SubscriptionRequest{
 //	    UserID: "user123", Email: "u@example.com", Code: "pro-monthly",
@@ -306,6 +309,21 @@ type OrderResult struct {
 	ProductName string `json:"productName"`
 }
 
+// ConfirmPaymentRequest picks the rail for a pending one-time order created by
+// CreateOrder. PaymentMethod is one of card | alipay | wechat_pay | crypto |
+// more — "more" lets Stripe Checkout list every method enabled on the account.
+type ConfirmPaymentRequest struct {
+	PaymentMethod string `json:"paymentMethod"`
+}
+
+// ConfirmPaymentResult is the result of ConfirmPayment. CheckoutURL is the
+// Stripe-hosted Checkout page (checkout.stripe.com) — send the payer straight
+// there; no NextPay-hosted page is involved.
+type ConfirmPaymentResult struct {
+	CheckoutURL string `json:"checkoutUrl"`
+	RedirectURL string `json:"redirectUrl,omitempty"`
+}
+
 // SubscriptionRequest creates a subscription checkout order.
 type SubscriptionRequest struct {
 	UserID              string `json:"userId"`
@@ -505,6 +523,15 @@ type WalletTransaction struct {
 // CreateOrder creates a one-time payment order.
 func CreateOrder(ctx context.Context, req *OrderRequest) (*OrderResult, error) {
 	return do(ctx, func(ctx context.Context, c *Client) (*OrderResult, error) { return c.createOrder(ctx, req) })
+}
+
+// ConfirmPayment locks the payment method of a pending order and returns the
+// Stripe Checkout URL. The server rejects orders older than 30 minutes (order
+// expired) and orders that are no longer pending; both surface as *APIError.
+func ConfirmPayment(ctx context.Context, orderUUID string, req *ConfirmPaymentRequest) (*ConfirmPaymentResult, error) {
+	return do(ctx, func(ctx context.Context, c *Client) (*ConfirmPaymentResult, error) {
+		return c.confirmPayment(ctx, orderUUID, req)
+	})
 }
 
 // CreateSubscription creates a subscription checkout order.
@@ -810,6 +837,14 @@ func (c *Client) createSubscription(ctx context.Context, req *SubscriptionReques
 		return nil, err
 	}
 	return decodeData[SubscriptionResult](resp.Data)
+}
+
+func (c *Client) confirmPayment(ctx context.Context, orderUUID string, req *ConfirmPaymentRequest) (*ConfirmPaymentResult, error) {
+	resp, err := c.doRequest(ctx, "POST", "/api/checkout/"+url.PathEscape(orderUUID)+"/confirm", req)
+	if err != nil {
+		return nil, err
+	}
+	return decodeData[ConfirmPaymentResult](resp.Data)
 }
 
 func (c *Client) grantSubscription(ctx context.Context, req *GrantSubscriptionRequest) (*GrantResult, error) {
