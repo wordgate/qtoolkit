@@ -26,7 +26,9 @@ result, err := nextpay.CreateSubscription(ctx, &nextpay.SubscriptionRequest{
 })
 ```
 
-The rest of the surface (`CreateOrder`, `GrantSubscription`, plan CRUD,
+The rest of the surface (`CreateOrder` + `ConfirmPayment` — the latter locks the
+rail and returns the Stripe Checkout URL so the app can skip the hosted page —,
+`GrantSubscription`, plan CRUD,
 `GetSubscriptions`, wallet ops, recharge contracts, ...) is documented inline in
 [`nextpay_config.yml`](./nextpay_config.yml).
 

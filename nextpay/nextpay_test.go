@@ -1,6 +1,7 @@
 package nextpay
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -86,6 +87,40 @@ func TestCreateOrder_Success(t *testing.T) {
 	}
 	if res.OrderID != "ord_1" || res.PaymentURL == "" {
 		t.Errorf("unexpected result: %+v", res)
+	}
+}
+
+func TestConfirmPayment_Success(t *testing.T) {
+	resetState()
+	defer mock(t, func(t *testing.T, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/api/checkout/ord_1/confirm" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		body := decodeBody(t, r)
+		if body["paymentMethod"] != "more" {
+			t.Errorf("paymentMethod = %v, want more", body["paymentMethod"])
+		}
+	}, testResponse{Data: map[string]any{
+		"checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_1",
+	}})()
+
+	res, err := ConfirmPayment(context.Background(), "ord_1", &ConfirmPaymentRequest{PaymentMethod: "more"})
+	if err != nil {
+		t.Fatalf("ConfirmPayment: %v", err)
+	}
+	if res.CheckoutURL != "https://checkout.stripe.com/c/pay/cs_test_1" {
+		t.Errorf("CheckoutURL = %q", res.CheckoutURL)
+	}
+}
+
+func TestConfirmPayment_APIError(t *testing.T) {
+	resetState()
+	defer mock(t, nil, testResponse{Code: 400002, Message: "order is not pending"})()
+
+	_, err := ConfirmPayment(context.Background(), "ord_1", &ConfirmPaymentRequest{PaymentMethod: "more"})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != 400002 {
+		t.Fatalf("want *APIError 400002, got %v", err)
 	}
 }
 
