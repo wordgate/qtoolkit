@@ -108,6 +108,41 @@ broadcast.Pub(ctx, "notifications", map[string]interface{}{
 router.GET("/metrics", broadcast.GetMetrics)
 ```
 
+#### Namespaces, slow consumers, shutdown
+
+Redis pub/sub ignores the `db` number, and `NewBroadcast` always uses the key
+`broadcast` — every service using it on the same Redis sees every other
+service's messages. New services should use a namespace:
+
+```go
+// Pub/sub key "broadcast:chat", late-message cache keys "broadcast:chat/<channel>".
+// Instances sharing a namespace (multi-node deployments) see each other;
+// different namespaces (and legacy NewBroadcast users) are isolated.
+broadcast := redis.NewNamedBroadcast("chat", 30,
+    redis.WithSubscriberBuffer(64), // per-subscriber buffer, default 64
+    redis.WithCheckOrigin(func(r *http.Request) bool { // default: allow all
+        return r.Header.Get("Origin") == "https://example.com"
+    }),
+)
+
+ctx, cancel := context.WithCancel(context.Background())
+go broadcast.RunContext(ctx) // returns ctx.Err() once ctx is cancelled
+defer cancel()
+
+broadcast.SubscriberCount("room-42") // subscribers on THIS instance only
+```
+
+Delivery rules (both constructors):
+
+- Each subscriber has its own buffered queue and the `Run` loop never blocks.
+  A subscriber whose queue is full is a slow consumer: it is unsubscribed, its
+  WebSocket is closed (close code 1013 when possible) and `messages_dropped`
+  is incremented. Clients are expected to reconnect and resync.
+- `WsSubChannel` reads from the client (frames are discarded) so a closed or
+  dead peer is detected: pings go out every 30s, and a connection that sends
+  no pong/frame for 70s is dropped. Writes time out after 10s.
+- `Delete(channel)` closes that channel's WebSockets with a normal close frame.
+
 ## API Reference
 
 ### Redis Client Management
@@ -144,6 +179,8 @@ type Broadcast struct {
     WsSub(paramName string) gin.HandlerFunc
     HttpSub(paramName string) gin.HandlerFunc
     Run()
+    RunContext(ctx context.Context) error
+    SubscriberCount(channel string) int
     GetMetrics(c *gin.Context)
     Delete(channel string)
 }
@@ -151,7 +188,9 @@ type Broadcast struct {
 
 ## Testing
 
-Run tests (requires Redis server):
+Broadcast tests (`broadcast_test.go`) run against an in-process
+[miniredis](https://github.com/alicebob/miniredis) and never skip. The other
+tests need a Redis server on `localhost:6379` and skip without one:
 
 ```bash
 cd redis
@@ -180,6 +219,9 @@ go test ./...
 | Field | Type | Description | Default |
 |-------|------|-------------|---------|
 | `cacheSecondsForLated` | int64 | Message cache duration for late subscribers | `10` |
+| `namespace` (`NewNamedBroadcast`) | string | Pub/sub key suffix; must be non-empty | - |
+| `WithSubscriberBuffer(n)` | int | Per-subscriber queue size before a slow consumer is kicked | `64` |
+| `WithCheckOrigin(fn)` | func | WebSocket origin check | allow all |
 
 ## Architecture
 
