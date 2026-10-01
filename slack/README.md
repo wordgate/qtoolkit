@@ -16,7 +16,7 @@ slack:
   webhooks:
     alert: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
     notify: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-  bot_token: "xoxb-YOUR-BOT-TOKEN"  # Optional, for DM functionality
+  bot_token: "xoxb-YOUR-BOT-TOKEN"  # Optional, for DM and bot API functionality
 ```
 
 See `slack_config.yml` for the configuration template.
@@ -59,6 +59,49 @@ slack.DM("user@example.com").
     Send()
 ```
 
+### Bot API (channels, threads, events)
+
+All of these use `bot_token` and return `ErrNoBotToken` if it is empty. A
+Slack response of HTTP 200 with `"ok": false` is returned as an error wrapping
+`ErrAPIFailed` and carrying Slack's error code. HTTP 429 is returned as
+`*RateLimitError`.
+
+```go
+// Post to a channel; ts identifies the message (and its thread)
+ts, err := slack.PostMessage(ctx, "C0123456789", "New conversation", nil)
+
+// Reply in that thread (ReplyBroadcast also shows it in the channel)
+_, err = slack.PostMessage(ctx, "C0123456789", "Visitor: hi", &slack.PostOptions{ThreadTS: ts})
+
+err = slack.UpdateMessage(ctx, "C0123456789", ts, "Conversation (closed)") // chat.update
+link, err := slack.GetPermalink(ctx, "C0123456789", ts)                    // chat.getPermalink
+err = slack.PinMessage(ctx, "C0123456789", ts)                             // pins.add
+email, err := slack.UserEmail(ctx, "U0123456789")                          // users.info
+
+var rl *slack.RateLimitError
+if errors.As(err, &rl) {
+    time.Sleep(rl.RetryAfter) // 0 if Slack sent no Retry-After header
+}
+```
+
+Scopes: `chat:write` (post/update), `pins:write` (pin), `users:read` +
+`users:read.email` (`UserEmail`).
+
+Verify incoming Events API / slash command / interactivity requests before
+parsing them. Pass the **raw** request body:
+
+```go
+body, _ := io.ReadAll(r.Body)
+if err := slack.VerifySignature(signingSecret, r.Header, body, time.Now()); err != nil {
+    http.Error(w, "invalid signature", http.StatusUnauthorized) // errors.Is(err, slack.ErrInvalidSignature)
+    return
+}
+```
+
+Requests whose `X-Slack-Request-Timestamp` is more than 5 minutes from `now`
+are rejected. The signing secret is passed by the caller; it is not part of
+this module's configuration.
+
 ### Colors
 
 ```go
@@ -79,6 +122,15 @@ slack.ColorDanger  // Red
 
 - `SendDM(email, text)` - Send simple DM
 - `DM(email)` - Create DM builder
+
+### Bot API Functions
+
+- `PostMessage(ctx, channelID, text, opts) (ts, error)` - Post a message or thread reply
+- `UpdateMessage(ctx, channelID, ts, text) error` - Edit a message
+- `GetPermalink(ctx, channelID, ts) (string, error)` - Message permalink
+- `PinMessage(ctx, channelID, ts) error` - Pin a message
+- `UserEmail(ctx, userID) (string, error)` - Profile email of a user
+- `VerifySignature(signingSecret, header, body, now) error` - Verify a Slack request signature
 
 ### MessageBuilder Methods
 
