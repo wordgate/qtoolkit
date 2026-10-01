@@ -102,6 +102,51 @@ Requests whose `X-Slack-Request-Timestamp` is more than 5 minutes from `now`
 are rejected. The signing secret is passed by the caller; it is not part of
 this module's configuration.
 
+### Channel Management
+
+Same conventions as the Bot API above (`ErrNoBotToken`, `ErrAPIFailed`,
+`*RateLimitError`).
+
+```go
+channelID, err := slack.CreateChannel(ctx, "support-42", false) // conversations.create; true = private
+if errors.Is(err, slack.ErrChannelNameTaken) {
+    // pick another name (the error also wraps ErrAPIFailed)
+}
+
+err = slack.InviteToChannel(ctx, channelID, []string{"U0123", "U0456"}) // conversations.invite
+err = slack.SetChannelTopic(ctx, channelID, "Visitor #42")              // conversations.setTopic
+members, err := slack.ChannelMembers(ctx, channelID)                    // conversations.members, all pages
+err = slack.ArchiveChannel(ctx, channelID)                              // conversations.archive
+
+botID, err := slack.BotUserID(ctx) // auth.test; cached after the first success
+```
+
+- `CreateChannel` sends `name` as is: it must already be lowercase, at most
+  80 characters, without spaces.
+- `InviteToChannel` sends at most 1000 user ids per call and splits longer
+  lists; an empty list is a no-op. `already_in_channel` is treated as success.
+- `ArchiveChannel` treats `already_archived` as success.
+- `SetChannelTopic` cuts topics longer than 250 characters to the first 250.
+- `BotUserID` caches per bot token for the life of the process; failures are
+  not cached.
+
+Scopes (public / private channels):
+
+| Operation | Scopes |
+|-----------|--------|
+| Create, archive, set topic | `channels:manage` / `groups:write` |
+| Invite | `channels:write.invites` / `groups:write.invites` |
+| List members | `channels:read` / `groups:read` |
+
+For any other Slack error code, use `*APIError`:
+
+```go
+var apiErr *slack.APIError
+if errors.As(err, &apiErr) && apiErr.Code == "not_in_channel" {
+    // apiErr.Method is the Web API method, e.g. "conversations.invite"
+}
+```
+
 ### Colors
 
 ```go
@@ -131,6 +176,15 @@ slack.ColorDanger  // Red
 - `PinMessage(ctx, channelID, ts) error` - Pin a message
 - `UserEmail(ctx, userID) (string, error)` - Profile email of a user
 - `VerifySignature(signingSecret, header, body, now) error` - Verify a Slack request signature
+
+### Channel Management Functions
+
+- `CreateChannel(ctx, name, private) (channelID, error)` - Create a public or private channel
+- `InviteToChannel(ctx, channelID, userIDs) error` - Add users to a channel
+- `ArchiveChannel(ctx, channelID) error` - Archive a channel
+- `ChannelMembers(ctx, channelID) ([]string, error)` - User ids of all members
+- `SetChannelTopic(ctx, channelID, topic) error` - Set the channel topic
+- `BotUserID(ctx) (string, error)` - The bot's own user id
 
 ### MessageBuilder Methods
 

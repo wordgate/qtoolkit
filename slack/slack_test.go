@@ -18,6 +18,7 @@ func resetState() {
 	configMux.Unlock()
 	configOnce = sync.Once{}
 	httpClient = nil
+	resetBotUserID()
 }
 
 func TestMessageBuilder_Text(t *testing.T) {

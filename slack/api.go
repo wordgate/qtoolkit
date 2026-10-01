@@ -35,6 +35,34 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("slack: rate limited, retry after %s", e.RetryAfter)
 }
 
+// APIError is returned when Slack answers a Web API call with "ok": false.
+// It matches ErrAPIFailed under errors.Is; use errors.As to read Slack's
+// error code instead of parsing the message:
+//
+//	var apiErr *slack.APIError
+//	if errors.As(err, &apiErr) && apiErr.Code == "channel_not_found" { ... }
+type APIError struct {
+	Method string // Web API method, e.g. "conversations.create"
+	Code   string // Slack's error code, e.g. "name_taken"
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%v: %s: %s", ErrAPIFailed, e.Method, e.Code)
+}
+
+// Unwrap makes errors.Is(err, ErrAPIFailed) hold for every APIError.
+func (e *APIError) Unwrap() error { return ErrAPIFailed }
+
+// slackErrorCode returns the Slack error code carried by err, or "" if err
+// is not (and does not wrap) an *APIError.
+func slackErrorCode(err error) string {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Code
+	}
+	return ""
+}
+
 // PostOptions are optional parameters for PostMessage.
 type PostOptions struct {
 	ThreadTS       string // non-empty: post as a reply in this thread
@@ -46,7 +74,8 @@ type PostOptions struct {
 // A non-nil payload is sent as a JSON POST body; otherwise the call is a GET
 // with query parameters. The response is decoded into out (if non-nil).
 // HTTP 429 yields *RateLimitError; any other failure, including an HTTP 200
-// whose body says "ok": false, wraps ErrAPIFailed with Slack's error code.
+// whose body says "ok": false, wraps ErrAPIFailed. The "ok": false case is an
+// *APIError carrying Slack's error code.
 func callAPI(ctx context.Context, method string, query url.Values, payload any, out any) error {
 	cfg := getConfig()
 	if cfg.BotToken == "" {
@@ -109,7 +138,7 @@ func callAPI(ctx context.Context, method string, query url.Values, payload any, 
 		return fmt.Errorf("%w: %s: %v", ErrAPIFailed, method, err)
 	}
 	if !status.OK {
-		return fmt.Errorf("%w: %s: %s", ErrAPIFailed, method, status.Error)
+		return &APIError{Method: method, Code: status.Error}
 	}
 
 	if out != nil {
@@ -199,7 +228,7 @@ func UserEmail(ctx context.Context, userID string) (string, error) {
 	}
 	err := callAPI(ctx, "users.info", url.Values{"user": {userID}}, nil, &result)
 	if err != nil {
-		if errors.Is(err, ErrAPIFailed) && strings.HasSuffix(err.Error(), ": user_not_found") {
+		if slackErrorCode(err) == "user_not_found" {
 			return "", fmt.Errorf("%w: %s", ErrUserNotFound, userID)
 		}
 		return "", err
