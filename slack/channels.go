@@ -52,8 +52,9 @@ func CreateChannel(ctx context.Context, name string, private bool) (channelID st
 
 // InviteToChannel adds users to a channel (conversations.invite). More than
 // 1000 user ids are sent as consecutive calls of at most 1000 each; the first
-// failing call aborts the rest. Slack's "already_in_channel" counts as
-// success. With no user ids it returns nil without calling Slack.
+// failing call aborts the rest. Every call sets force=true, which asks Slack
+// to skip ids that are invalid or already in the channel and invite the
+// others. Slack's "already_in_channel" counts as success. With no user ids it returns nil without calling Slack.
 // Requires bot_token with the channels:write.invites scope
 // (groups:write.invites for private channels); the bot must be a member.
 func InviteToChannel(ctx context.Context, channelID string, userIDs []string) error {
@@ -62,6 +63,7 @@ func InviteToChannel(ctx context.Context, channelID string, userIDs []string) er
 		payload := map[string]any{
 			"channel": channelID,
 			"users":   strings.Join(batch, ","),
+			"force":   true,
 		}
 		err := callAPI(ctx, "conversations.invite", nil, payload, nil)
 		if err != nil && slackErrorCode(err) != "already_in_channel" {

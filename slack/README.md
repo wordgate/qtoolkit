@@ -124,7 +124,9 @@ botID, err := slack.BotUserID(ctx) // auth.test; cached after the first success
 - `CreateChannel` sends `name` as is: it must already be lowercase, at most
   80 characters, without spaces.
 - `InviteToChannel` sends at most 1000 user ids per call and splits longer
-  lists; an empty list is a no-op. `already_in_channel` is treated as success.
+  lists; an empty list is a no-op. Every call sets `force: true`, so Slack
+  skips ids that are invalid or already in the channel and invites the rest.
+  `already_in_channel` is treated as success.
 - `ArchiveChannel` treats `already_archived` as success.
 - `SetChannelTopic` cuts topics longer than 250 characters to the first 250.
 - `BotUserID` caches per bot token for the life of the process; failures are

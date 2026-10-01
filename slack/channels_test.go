@@ -219,6 +219,9 @@ func TestInviteToChannel(t *testing.T) {
 		if reqs[0].Body["channel"] != "C1" || reqs[0].Body["users"] != "U1,U2,U3" {
 			t.Errorf("body = %v, want channel=C1 users=U1,U2,U3", reqs[0].Body)
 		}
+		if reqs[0].Body["force"] != true {
+			t.Errorf("force = %v, want true", reqs[0].Body["force"])
+		}
 	})
 
 	t.Run("already_in_channel is success", func(t *testing.T) {
@@ -264,6 +267,9 @@ func TestInviteToChannel(t *testing.T) {
 		for i, r := range reqs {
 			if r.Body["channel"] != "C1" {
 				t.Errorf("request %d channel = %v, want C1", i, r.Body["channel"])
+			}
+			if r.Body["force"] != true {
+				t.Errorf("request %d force = %v, want true", i, r.Body["force"])
 			}
 		}
 	})
