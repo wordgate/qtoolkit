@@ -1,12 +1,16 @@
 package exchange
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -17,24 +21,43 @@ var (
 	clientOnce   sync.Once    // Ensure initialization happens only once
 	initErr      error        // Initialization error
 	configMux    sync.RWMutex // Configuration read/write lock
+
+	apiBaseURL = "https://v6.exchangerate-api.com"
+	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
+
+// ErrStale is wrapped in the error returned alongside last-known-good rates
+// when refreshing an expired cache entry fails.
+var ErrStale = errors.New("exchange rates are stale")
 
 // Config represents exchange rate API configuration
 type Config struct {
 	APIKey       string `yaml:"api_key"`
-	CacheTTL     int    `yaml:"cache_ttl"`      // Cache time-to-live in seconds
-	BaseCurrency string `yaml:"base_currency"`  // Default base currency
+	CacheTTL     int    `yaml:"cache_ttl"`     // Cache time-to-live in seconds
+	BaseCurrency string `yaml:"base_currency"` // Default base currency
 }
 
 // Client represents the exchange rate API client
 type Client struct {
 	config *Config
+
+	mu    sync.Mutex
+	cache map[string]*cacheEntry // keyed by upper-case base currency
+}
+
+// cacheEntry holds the last successful rates for one base currency.
+// sem (capacity 1) guards rates/fetchedAt and serializes refreshes.
+type cacheEntry struct {
+	sem       chan struct{}
+	rates     map[string]float64
+	fetchedAt time.Time
 }
 
 // ExchangeApiResp represents the API response structure
 type ExchangeApiResp struct {
 	TimeLastUpdateUnix int64              `json:"time_last_update_unix"`
 	Result             string             `json:"result"`
+	ErrorType          string             `json:"error-type"`
 	ConversionRates    map[string]float64 `json:"conversion_rates"` // upper case map
 }
 
@@ -109,44 +132,112 @@ func SetConfig(cfg *Config) {
 	globalConfig = cfg
 }
 
-// GetRates fetches exchange rates for the given currency
-func (c *Client) GetRates(currency string) (map[string]float64, error) {
+// GetRates returns conversion rates for the given base currency, cached
+// in-process for Config.CacheTTL seconds per currency.
+//
+// If a refresh fails while an expired entry exists, the last successful rates
+// are returned together with an error wrapping ErrStale and the cause, so the
+// caller can decide whether stale data is acceptable:
+//
+//	rates, err := exchange.GetRates(ctx, "USD")
+//	if errors.Is(err, exchange.ErrStale) { /* rates is the last good value */ }
+//
+// The returned map is a copy and may be modified freely.
+func (c *Client) GetRates(ctx context.Context, currency string) (map[string]float64, error) {
 	if c == nil || c.config == nil {
 		return nil, fmt.Errorf("exchange rate client not initialized")
 	}
+	currency = strings.ToUpper(currency)
+	e := c.entry(currency)
 
-	url := fmt.Sprintf("https://v6.exchangerate-api.com/v6/%s/latest/%s",
-		c.config.APIKey, strings.ToUpper(currency))
+	// Serialize refreshes per currency while still honoring ctx.
+	select {
+	case e.sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-e.sem }()
 
-	resp, err := http.Get(url)
+	ttl := time.Duration(c.config.CacheTTL) * time.Second
+	if e.rates != nil && time.Since(e.fetchedAt) < ttl {
+		return maps.Clone(e.rates), nil
+	}
+
+	rates, err := c.fetch(ctx, currency)
+	if err != nil {
+		if e.rates != nil {
+			return maps.Clone(e.rates), fmt.Errorf("%w: %w", ErrStale, err)
+		}
+		return nil, err
+	}
+	e.rates, e.fetchedAt = rates, time.Now()
+	return maps.Clone(rates), nil
+}
+
+// entry returns the cache entry for currency, creating it if needed.
+func (c *Client) entry(currency string) *cacheEntry {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cache == nil {
+		c.cache = make(map[string]*cacheEntry)
+	}
+	e, ok := c.cache[currency]
+	if !ok {
+		e = &cacheEntry{sem: make(chan struct{}, 1)}
+		c.cache[currency] = e
+	}
+	return e
+}
+
+// fetch requests rates from ExchangeRate-API.
+func (c *Client) fetch(ctx context.Context, currency string) (map[string]float64, error) {
+	url := fmt.Sprintf("%s/v6/%s/latest/%s", apiBaseURL, c.config.APIKey, currency)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("exchange rate request: %w", err)
+	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exchange rate read body: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("exchange rate API HTTP %d: %s", resp.StatusCode, truncate(body, 200))
 	}
 
 	ex := &ExchangeApiResp{}
 	if err := json.Unmarshal(body, ex); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exchange rate decode: %w: %s", err, truncate(body, 200))
 	}
-
 	if ex.Result != "success" {
-		return nil, fmt.Errorf("API returned non-success result: %s", ex.Result)
+		return nil, fmt.Errorf("exchange rate API result %q: %s", ex.Result, ex.ErrorType)
 	}
-
+	if len(ex.ConversionRates) == 0 {
+		return nil, fmt.Errorf("exchange rate API returned no rates")
+	}
 	return ex.ConversionRates, nil
 }
 
-// ExchangeApiGet fetches exchange rates (backward compatible function)
-// Deprecated: Use Get().GetRates(currency) instead
-func ExchangeApiGet(currency string) (map[string]float64, error) {
+func truncate(b []byte, n int) string {
+	if len(b) > n {
+		return string(b[:n]) + "..."
+	}
+	return string(b)
+}
+
+// GetRates returns conversion rates for currency using the global client.
+// See Client.GetRates for caching and ErrStale semantics.
+func GetRates(ctx context.Context, currency string) (map[string]float64, error) {
 	client := Get()
 	if err := GetError(); err != nil {
 		return nil, err
 	}
-	return client.GetRates(currency)
+	return client.GetRates(ctx, currency)
 }

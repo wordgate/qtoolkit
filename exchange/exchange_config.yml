@@ -13,7 +13,7 @@ exchange_rate:
   # base_currency: "USD"
 
 # Usage Example:
-# rates, err := exchange.Get("USD")
+# rates, err := exchange.GetRates(ctx, "USD")
 # if err != nil {
 #     log.Fatal(err)
 # }
@@ -21,6 +21,5 @@ exchange_rate:
 
 # Security Notes:
 # - Never commit real API keys to version control
-# - Use environment variables for production: export EXCHANGE_RATE_API_KEY=your_key
 # - Free tier has rate limits - monitor usage
 # - Rotate API keys periodically

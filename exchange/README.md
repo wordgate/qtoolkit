@@ -7,8 +7,9 @@ Exchange rate API client for fetching real-time currency conversion rates using 
 - ✅ Real-time exchange rate data from 160+ currencies
 - ✅ Lazy loading with `sync.Once` for thread-safe initialization
 - ✅ Viper-based configuration auto-loading
-- ✅ Configurable cache TTL and base currency
-- ✅ Backward compatible with v0.x API
+- ✅ In-process per-currency cache (`cache_ttl`), concurrency-safe, one upstream request per refresh
+- ✅ Stale-on-error: returns last good rates with an error wrapping `ErrStale`
+- ✅ 10s HTTP timeout plus `context.Context` cancellation
 
 ## Installation
 
@@ -54,36 +55,19 @@ exchange.SetConfig(&exchange.Config{
 
 ## Usage
 
-### v1.0 API (Recommended)
-
 ```go
 import "github.com/wordgate/qtoolkit/exchange"
 
-// Get exchange rates for USD
-rates, err := exchange.Get().GetRates("USD")
+// Cached for cache_ttl seconds per base currency
+rates, err := exchange.GetRates(ctx, "USD")
 if err != nil {
     log.Fatal(err)
 }
 
-// Access specific currency rates
-fmt.Printf("USD to CNY: %.2f\n", rates["CNY"])
-fmt.Printf("USD to EUR: %.2f\n", rates["EUR"])
-fmt.Printf("USD to JPY: %.2f\n", rates["JPY"])
+fmt.Printf("USD to CNY: %.4f\n", rates["CNY"])
 ```
 
-### v0.x Compatible API
-
-```go
-import "github.com/wordgate/qtoolkit/exchange"
-
-// Backward compatible function
-rates, err := exchange.ExchangeApiGet("USD")
-if err != nil {
-    log.Fatal(err)
-}
-
-fmt.Printf("USD to GBP: %.2f\n", rates["GBP"])
-```
+The returned map is a copy; callers may modify it.
 
 ## API Response Format
 
@@ -107,15 +91,15 @@ The API supports 160+ currencies including:
 ## Error Handling
 
 ```go
-rates, err := exchange.Get().GetRates("USD")
-if err != nil {
-    // Handle errors:
-    // - Network errors
-    // - API key invalid
-    // - Rate limit exceeded
-    // - Currency not supported
-    log.Printf("Failed to fetch rates: %v", err)
-    return
+rates, err := exchange.GetRates(ctx, "USD")
+switch {
+case errors.Is(err, exchange.ErrStale):
+    // Refresh failed; rates holds the last successful (expired) value.
+    // err also wraps the underlying cause. Decide whether to accept it.
+case err != nil:
+    // No rates available: network error, timeout, non-2xx HTTP status,
+    // API error result (e.g. invalid-key), or ctx canceled.
+    return err
 }
 ```
 
@@ -139,7 +123,7 @@ go test ./...
 go test -cover ./...
 ```
 
-**Note**: Tests use placeholder API key `YOUR_EXCHANGE_RATE_API_KEY`. Replace with real key for integration tests.
+Tests use an `httptest` mock server. The live API test runs only when `EXCHANGE_RATE_API_KEY` is set.
 
 ## Rate Limits
 
@@ -153,7 +137,6 @@ Check [ExchangeRate-API pricing](https://www.exchangerate-api.com/pricing) for c
 ## Security Notes
 
 - Never commit real API keys to version control
-- Use environment variables in production: `export EXCHANGE_RATE_API_KEY=your_key`
 - Rotate API keys periodically
 - Monitor usage to avoid rate limit overages
 
@@ -162,6 +145,7 @@ Check [ExchangeRate-API pricing](https://www.exchangerate-api.com/pricing) for c
 The module uses:
 - `sync.Once` for lazy initialization (only once, thread-safe)
 - `sync.RWMutex` for configuration access (concurrent reads, exclusive writes)
+- A per-currency lock for the rate cache, so concurrent callers share one upstream request
 
 Safe for concurrent use across goroutines.
 
@@ -191,6 +175,7 @@ Part of qtoolkit v1.0 modular architecture:
 package main
 
 import (
+    "context"
     "fmt"
     "log"
 
@@ -206,7 +191,7 @@ func main() {
     }
 
     // Fetch exchange rates
-    rates, err := exchange.Get().GetRates("USD")
+    rates, err := exchange.GetRates(context.Background(), "USD")
     if err != nil {
         log.Fatalf("Failed to fetch rates: %v", err)
     }
