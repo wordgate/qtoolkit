@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"time"
@@ -148,6 +149,9 @@ func (c *Client) GetRates(ctx context.Context, currency string) (map[string]floa
 		return nil, fmt.Errorf("exchange rate client not initialized")
 	}
 	currency = strings.ToUpper(currency)
+	if !isCurrencyCode(currency) {
+		return nil, fmt.Errorf("invalid currency code %q", currency)
+	}
 	e := c.entry(currency)
 
 	// Serialize refreshes per currency while still honoring ctx.
@@ -199,6 +203,11 @@ func (c *Client) fetch(ctx context.Context, currency string) (map[string]float64
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		// *url.Error embeds the request URL, which contains the API key.
+		var urlErr *neturl.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
 		return nil, fmt.Errorf("exchange rate request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -223,6 +232,20 @@ func (c *Client) fetch(ctx context.Context, currency string) (map[string]float64
 		return nil, fmt.Errorf("exchange rate API returned no rates")
 	}
 	return ex.ConversionRates, nil
+}
+
+// isCurrencyCode reports whether s is a 3-letter upper-case ISO 4217 code.
+// This also bounds the cache to at most 26^3 entries.
+func isCurrencyCode(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if s[i] < 'A' || s[i] > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func truncate(b []byte, n int) string {

@@ -232,6 +232,39 @@ func TestGetRatesConcurrentSingleFetch(t *testing.T) {
 	}
 }
 
+func TestGetRatesInvalidCurrency(t *testing.T) {
+	calls := mockAPI(t, func(w http.ResponseWriter, r *http.Request) { writeRates(w, 7.1) })
+
+	for _, c := range []string{"", "US", "USDX", "U$D", "../x"} {
+		if _, err := GetRates(context.Background(), c); err == nil {
+			t.Errorf("GetRates(%q): want error", c)
+		}
+	}
+	if n := calls.Load(); n != 0 {
+		t.Errorf("upstream called %d times, want 0", n)
+	}
+	if n := len(Get().cache); n != 0 {
+		t.Errorf("cache has %d entries, want 0", n)
+	}
+}
+
+func TestGetRatesErrorHidesAPIKey(t *testing.T) {
+	mockAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err := GetRates(ctx, "USD")
+	if err == nil || strings.Contains(err.Error(), "test_key") {
+		t.Errorf("error must not contain API key: %v", err)
+	}
+}
+
 func TestGetRatesNotInitialized(t *testing.T) {
 	resetClient()
 	viper.Reset()
