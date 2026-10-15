@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	netmail "net/mail"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -654,5 +655,130 @@ func TestSMTP_SubjectRFC2047Encoding(t *testing.T) {
 	}
 	if strings.Contains(body, "五月中文主题测试") {
 		t.Errorf("raw UTF-8 Chinese must NOT appear in Subject (would mojibake on GBK clients); raw DATA was:\n%s", body)
+	}
+}
+
+var fromNameCases = []struct {
+	lang string
+	name string
+}{
+	{"zh-Hans", "四合会议"},
+	{"zh-Hant", "四合會議"},
+	{"en", "ANC Meetings"},
+}
+
+func configureCaptureSMTP(t *testing.T, fromName string) <-chan string {
+	t.Helper()
+	host, port, bodyCh := captureSMTP(t)
+	resetMailer()
+	viper.Set("mail.provider", "")
+	viper.Set("mail.send_from", "from@example.com")
+	viper.Set("mail.send_from_name", fromName)
+	viper.Set("mail.username", "u")
+	viper.Set("mail.password", "p")
+	viper.Set("mail.smtp_host", host)
+	viper.Set("mail.smtp_port", port)
+	t.Cleanup(func() { viper.Set("mail.send_from_name", "") })
+	return bodyCh
+}
+
+func parseFromHeader(t *testing.T, raw string) (*netmail.Address, netmail.Header) {
+	t.Helper()
+	m, err := netmail.ReadMessage(strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("ReadMessage: %v\n%s", err, raw)
+	}
+	addr, err := netmail.ParseAddress(m.Header.Get("From"))
+	if err != nil {
+		t.Fatalf("ParseAddress(%q): %v", m.Header.Get("From"), err)
+	}
+	return addr, m.Header
+}
+
+func TestSMTP_FromName_MessageOverridesConfig(t *testing.T) {
+	for _, tc := range fromNameCases {
+		t.Run(tc.lang, func(t *testing.T) {
+			bodyCh := configureCaptureSMTP(t, "Config Name")
+			if err := Send(&Message{To: "rcpt@example.com", Subject: "s", Body: "b", FromName: tc.name}); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+			addr, _ := parseFromHeader(t, <-bodyCh)
+			if addr.Name != tc.name || addr.Address != "from@example.com" {
+				t.Errorf("got %+v, want name=%q addr=from@example.com", addr, tc.name)
+			}
+		})
+	}
+}
+
+func TestSMTP_FromName_ConfigDefault(t *testing.T) {
+	for _, tc := range fromNameCases {
+		t.Run(tc.lang, func(t *testing.T) {
+			bodyCh := configureCaptureSMTP(t, tc.name)
+			if err := Send(&Message{To: "rcpt@example.com", Subject: "s", Body: "b"}); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+			addr, _ := parseFromHeader(t, <-bodyCh)
+			if addr.Name != tc.name || addr.Address != "from@example.com" {
+				t.Errorf("got %+v, want name=%q addr=from@example.com", addr, tc.name)
+			}
+		})
+	}
+}
+
+func TestSMTP_FromName_EmptyKeepsBareAddress(t *testing.T) {
+	bodyCh := configureCaptureSMTP(t, "")
+	if err := Send(&Message{To: "rcpt@example.com", Subject: "s", Body: "b"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	_, hdr := parseFromHeader(t, <-bodyCh)
+	if got := hdr.Get("From"); got != "from@example.com" {
+		t.Errorf("From header = %q, want bare from@example.com", got)
+	}
+}
+
+func TestSMTP_FromName_StripsCRLF(t *testing.T) {
+	bodyCh := configureCaptureSMTP(t, "")
+	if err := Send(&Message{To: "rcpt@example.com", Subject: "s", Body: "b",
+		FromName: "Evil\r\nBcc: victim@example.com"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	addr, hdr := parseFromHeader(t, <-bodyCh)
+	if hdr.Get("Bcc") != "" {
+		t.Errorf("header injection: Bcc=%q", hdr.Get("Bcc"))
+	}
+	if addr.Name != "EvilBcc: victim@example.com" || addr.Address != "from@example.com" {
+		t.Errorf("got %+v", addr)
+	}
+}
+
+func TestSESFrom(t *testing.T) {
+	for _, tc := range fromNameCases {
+		t.Run(tc.lang, func(t *testing.T) {
+			for _, c := range []struct {
+				cfg *config
+				msg *Message
+			}{
+				{&config{SendFrom: "from@example.com", SendFromName: "Config Name"}, &Message{FromName: tc.name}},
+				{&config{SendFrom: "from@example.com", SendFromName: tc.name}, &Message{}},
+			} {
+				raw := sesFrom(c.cfg, c.msg)
+				addr, err := netmail.ParseAddress(raw)
+				if err != nil {
+					t.Fatalf("ParseAddress(%q): %v", raw, err)
+				}
+				if addr.Name != tc.name || addr.Address != "from@example.com" {
+					t.Errorf("got %+v from %q", addr, raw)
+				}
+				if tc.lang != "en" && !strings.HasPrefix(raw, "=?utf-8?") {
+					t.Errorf("non-ASCII name must be RFC 2047 encoded, got %q", raw)
+				}
+			}
+		})
+	}
+	if got := sesFrom(&config{SendFrom: "from@example.com"}, &Message{}); got != "from@example.com" {
+		t.Errorf("empty name: got %q, want bare address", got)
+	}
+	if got := sesFrom(&config{SendFrom: "from@example.com"}, &Message{FromName: "\r\n"}); got != "from@example.com" {
+		t.Errorf("CRLF-only name: got %q, want bare address", got)
 	}
 }

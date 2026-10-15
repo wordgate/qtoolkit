@@ -11,6 +11,10 @@ mail:
   # Sender email address (required)
   send_from: YOUR_EMAIL@example.com
 
+  # Optional default display name shown in the From header.
+  # Any language is fine (encoded per RFC 2047). Message.FromName overrides it per email.
+  # send_from_name: ANC Meetings
+
   # SMTP settings (required when provider is smtp)
   username: YOUR_EMAIL@example.com
   password: YOUR_EMAIL_PASSWORD

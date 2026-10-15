@@ -14,6 +14,7 @@
 ```yaml
 mail:
   send_from: sender@example.com
+  send_from_name: 四合会议          # 可选，发件人显示名
   username: smtp-user@example.com
   password: smtp-password
   smtp_host: smtp.example.com
@@ -149,6 +150,7 @@ mail.Send(&mail.Message{
 | `Subject` | `string` | ✅ | 邮件主题 |
 | `Body` | `string` | | 邮件正文 |
 | `IsHTML` | `bool` | | 是否 HTML 格式（默认 false） |
+| `FromName` | `string` | | 本封邮件的发件人显示名，覆盖 `send_from_name`（可选） |
 | `ReplyTo` | `string` | | 回复地址（可选） |
 | `Cc` | `[]string` | | 抄送列表（可选） |
 | `Attachments` | `[]Attachment` | | 附件列表（可选） |

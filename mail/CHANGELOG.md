@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.43 - 发件人显示名 (2026-10-15)
+
+### ✨ 新增
+
+- `Message.FromName`：本封邮件的发件人显示名，非空时覆盖配置。
+- `<prefix>.send_from_name`：缺省显示名（可选）。地址仍取 `<prefix>.send_from`。
+
+```go
+mail.Send(&mail.Message{To: "u@example.com", Subject: "...", Body: "...", FromName: "四合會議"})
+// From: =?utf-8?q?...?= <noreply@example.com>
+```
+
+- SMTP 走 `SetAddressHeader`，SES 走 `net/mail.Address.String()`，中/繁/英名均按 RFC 2047 编码，`net/mail.ParseAddress` 可还原。
+- 显示名去除 CR/LF，防头注入。
+- 两者都为空时 From 头与此前完全一致（裸地址）。
+
 ## v2.1.0 - 多发件身份 (2026-04-21)
 
 ### ✨ 新增

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	netmail "net/mail"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
@@ -22,6 +24,7 @@ var (
 // Message is the outbound email payload.
 type Message struct {
 	To          string       // Recipient
+	FromName    string       // Optional display name; overrides <prefix>.send_from_name
 	Subject     string       // Subject line
 	Body        string       // Plain text or HTML body
 	IsHTML      bool         // Body is HTML when true
@@ -43,16 +46,17 @@ type Sender struct {
 }
 
 type config struct {
-	Provider  string
-	SendFrom  string
-	SMTPHost  string
-	SMTPPort  int
-	Username  string
-	Password  string
-	Region    string
-	AccessKey string
-	SecretKey string
-	UseIMDS   bool
+	Provider     string
+	SendFrom     string
+	SendFromName string
+	SMTPHost     string
+	SMTPPort     int
+	Username     string
+	Password     string
+	Region       string
+	AccessKey    string
+	SecretKey    string
+	UseIMDS      bool
 }
 
 type sender struct {
@@ -182,16 +186,17 @@ func senderFor(prefix string) *sender {
 // loadConfig reads and validates <prefix>.* from viper.
 func loadConfig(prefix string) (*config, error) {
 	cfg := &config{
-		Provider:  viper.GetString(prefix + ".provider"),
-		SendFrom:  viper.GetString(prefix + ".send_from"),
-		SMTPHost:  viper.GetString(prefix + ".smtp_host"),
-		SMTPPort:  viper.GetInt(prefix + ".smtp_port"),
-		Username:  viper.GetString(prefix + ".username"),
-		Password:  viper.GetString(prefix + ".password"),
-		Region:    viper.GetString(prefix + ".region"),
-		AccessKey: viper.GetString(prefix + ".access_key"),
-		SecretKey: viper.GetString(prefix + ".secret_key"),
-		UseIMDS:   viper.GetBool(prefix + ".use_imds"),
+		Provider:     viper.GetString(prefix + ".provider"),
+		SendFrom:     viper.GetString(prefix + ".send_from"),
+		SendFromName: sanitizeName(viper.GetString(prefix + ".send_from_name")),
+		SMTPHost:     viper.GetString(prefix + ".smtp_host"),
+		SMTPPort:     viper.GetInt(prefix + ".smtp_port"),
+		Username:     viper.GetString(prefix + ".username"),
+		Password:     viper.GetString(prefix + ".password"),
+		Region:       viper.GetString(prefix + ".region"),
+		AccessKey:    viper.GetString(prefix + ".access_key"),
+		SecretKey:    viper.GetString(prefix + ".secret_key"),
+		UseIMDS:      viper.GetBool(prefix + ".use_imds"),
 	}
 	if cfg.Provider == "" {
 		cfg.Provider = "smtp"
@@ -253,7 +258,11 @@ func validateMessage(msg *Message) error {
 
 func sendViaSMTP(snd *sender, msg *Message) error {
 	m := gomail.NewMessage()
-	m.SetHeader("From", snd.cfg.SendFrom)
+	if name := fromName(snd.cfg, msg); name != "" {
+		m.SetAddressHeader("From", snd.cfg.SendFrom, name)
+	} else {
+		m.SetHeader("From", snd.cfg.SendFrom)
+	}
 	m.SetHeader("To", msg.To)
 	m.SetHeader("Subject", msg.Subject)
 
@@ -280,7 +289,7 @@ func sendViaSMTP(snd *sender, msg *Message) error {
 
 func sendViaSES(snd *sender, msg *Message) error {
 	req := &ses.EmailRequest{
-		From:    snd.cfg.SendFrom,
+		From:    sesFrom(snd.cfg, msg),
 		To:      []string{msg.To},
 		Subject: msg.Subject,
 	}
@@ -303,6 +312,30 @@ func sendViaSES(snd *sender, msg *Message) error {
 	}
 	_, err := ses.SendEmailWith(context.Background(), snd.ses, req)
 	return err
+}
+
+// fromName resolves the display name: Message.FromName wins over
+// <prefix>.send_from_name. Empty means a bare address in the From header.
+func fromName(cfg *config, msg *Message) string {
+	if name := sanitizeName(msg.FromName); name != "" {
+		return name
+	}
+	return cfg.SendFromName
+}
+
+// sesFrom builds the SES FromEmailAddress; net/mail RFC 2047-encodes
+// non-ASCII names as SES requires.
+func sesFrom(cfg *config, msg *Message) string {
+	name := fromName(cfg, msg)
+	if name == "" {
+		return cfg.SendFrom
+	}
+	return (&netmail.Address{Name: name, Address: cfg.SendFrom}).String()
+}
+
+// sanitizeName strips CR/LF to prevent header injection.
+func sanitizeName(name string) string {
+	return strings.TrimSpace(strings.NewReplacer("\r", "", "\n", "").Replace(name))
 }
 
 func attachBytes(m *gomail.Message, filename string, data []byte) error {
