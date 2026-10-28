@@ -4,5 +4,5 @@ is_dev: true
 
 log:
   level: debug                     # trace, debug, info, warn, error, fatal, panic
-  path: /var/log/app.log           # Log file path (empty = stdout)
+  path: /var/log/app.log           # Log file path (empty = stdout; when set, logs go to the file only)
   cloudwatch: false                # Enable CloudWatch Logs (requires aws.cloudwatch.* config)

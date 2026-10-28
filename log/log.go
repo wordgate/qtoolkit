@@ -33,7 +33,7 @@ func initialize() {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 	logger.SetLevel(parseLogLevel(level))
-	logger.SetOutput(createLogWriter(logPath, level))
+	logger.SetOutput(createLogWriter(logPath))
 
 	// Set gin default writers
 	gin.DefaultWriter = logger.Writer()
@@ -51,7 +51,7 @@ func getLogger() *logrus.Logger {
 }
 
 // createLogWriter creates the appropriate io.Writer based on config
-func createLogWriter(logPath, level string) io.Writer {
+func createLogWriter(logPath string) io.Writer {
 	if logPath == "" {
 		return os.Stdout
 	}
@@ -63,17 +63,12 @@ func createLogWriter(logPath, level string) io.Writer {
 		return os.Stdout
 	}
 
-	writer := &lumberjack.Logger{
+	return &lumberjack.Logger{
 		Filename:   logPath,
 		MaxSize:    500,
 		MaxBackups: 3,
 		MaxAge:     28,
 	}
-
-	if parseLogLevel(level) == logrus.DebugLevel {
-		return io.MultiWriter(writer, os.Stdout)
-	}
-	return writer
 }
 
 // parseLogLevel parses log level string to logrus.Level
