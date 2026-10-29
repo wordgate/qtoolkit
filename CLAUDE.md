@@ -22,9 +22,9 @@ qtoolkit v1.0 uses a **modular architecture** where each service is an independe
 
 ## Go Version Requirement
 
-**Mandatory requirement: Go 1.24.0**
+**Mandatory requirement: Go 1.26.0**
 
-All modules' `go.mod` must use `go 1.24.0`.
+All modules' `go.mod` must use `go 1.26.0`.
 
 ## Development Commands
 

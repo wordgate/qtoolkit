@@ -1,0 +1,13 @@
+# .labtest.yml — k2ci（labtest）测试套件
+# 每个模块独立 go.mod：GOWORK=off 逐个 vet + test，验证发布后的真实依赖解析。
+suites:
+  go:
+    run: >-
+      export GOTOOLCHAIN=go1.26.10 GOWORK=off; fail="";
+      for m in $(sed -n 's/^\t\.\///p' go.work); do
+        echo "=== $m";
+        (cd "$m" && go vet ./... && go test ./... -count=1 -short) || fail="$fail $m";
+      done;
+      [ -z "$fail" ] || { echo "FAILED:$fail"; false; }
+    mem: 3G
+    timeout: 30m
