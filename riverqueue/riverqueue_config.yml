@@ -1,0 +1,15 @@
+# River Configuration Template (module: github.com/wordgate/qtoolkit/riverqueue)
+# Add this to your main config.yml file. The database comes from the pool you
+# pass to riverqueue.New (usually pg.MustGet(), configured under postgres.*).
+
+river:
+  # Queues worked by this process: queue name -> max concurrent workers.
+  # Used only when the client has Workers and the code sets no Queues.
+  # Default: the "default" queue with 100 workers.
+  # Queue names are lower-cased by viper.
+  queues:
+    default: 100
+
+  # On Stop, how long running jobs may run before their contexts are
+  # cancelled. Default 30s. "0s" waits forever (River's own default).
+  soft_stop_timeout: "30s"
