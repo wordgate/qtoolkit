@@ -197,9 +197,45 @@ func TestRequestIDWithoutMiddleware(t *testing.T) {
 	if RequestID(context.Background()) != "" {
 		t.Fatal("want empty id")
 	}
+}
+
+func TestRequestIDStaysTopLevel(t *testing.T) {
 	buf := useBuffer(t, slog.LevelInfo)
-	Get().With("k", "v").WithGroup("g").InfoContext(context.WithValue(context.Background(), requestIDKey{}, "rid"), "m", "x", 1)
-	if !strings.Contains(buf.String(), `"rid"`) {
-		t.Fatalf("request_id lost after With/WithGroup: %s", buf.String())
+	ctx := context.WithValue(context.Background(), requestIDKey{}, "rid")
+
+	base := Get().With("k", "v")
+	grouped := base.WithGroup("g").With("inner", 1)
+	grouped.InfoContext(ctx, "m", "x", 1)
+	base.InfoContext(ctx, "plain")
+	grouped.Info("no ctx")
+
+	got := lines(t, buf)
+	if len(got) != 3 {
+		t.Fatalf("want 3 lines, got %v", got)
+	}
+	g, _ := got[0]["g"].(map[string]any)
+	if got[0]["request_id"] != "rid" || got[0]["k"] != "v" || g["inner"] != float64(1) || g["x"] != float64(1) {
+		t.Fatalf("grouped line: %v", got[0])
+	}
+	if _, nested := g["request_id"]; nested {
+		t.Fatalf("request_id nested in group: %v", got[0])
+	}
+	if got[1]["request_id"] != "rid" || got[1]["k"] != "v" {
+		t.Fatalf("plain line: %v", got[1])
+	}
+	if _, ok := got[2]["request_id"]; ok {
+		t.Fatalf("request_id without context: %v", got[2])
+	}
+	// Derived loggers must not share op slices.
+	a, b := base.WithGroup("a"), base.WithGroup("b")
+	buf.Reset()
+	a.InfoContext(ctx, "A", "x", 1)
+	b.InfoContext(ctx, "B", "x", 1)
+	got = lines(t, buf)
+	if _, ok := got[0]["a"]; !ok {
+		t.Fatalf("logger a lost its group: %v", got[0])
+	}
+	if _, ok := got[1]["b"]; !ok {
+		t.Fatalf("logger b lost its group: %v", got[1])
 	}
 }

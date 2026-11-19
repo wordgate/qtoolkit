@@ -64,24 +64,51 @@ func levelFromViper() (slog.Level, error) {
 }
 
 func newLogger(w io.Writer, level slog.Level) *slog.Logger {
-	return slog.New(contextHandler{slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})})
+	root := slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
+	return slog.New(contextHandler{root: root, cur: root})
 }
 
-// contextHandler adds request_id to records logged with a context that carries
-// one (see Middleware).
-type contextHandler struct{ slog.Handler }
+// contextHandler adds a top-level request_id to records logged with a context
+// that carries one (see Middleware), even on loggers derived with WithGroup.
+//
+// root is the bare JSON handler; cur is root with the logger's With/WithGroup
+// calls applied (ops replays them). Records without a request ID go straight to
+// cur. For records with one, request_id is added to root first and the calls
+// are replayed on top, so it stays outside any group.
+type contextHandler struct {
+	root slog.Handler
+	cur  slog.Handler
+	ops  []func(slog.Handler) slog.Handler
+}
+
+func (h contextHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.cur.Enabled(ctx, level)
+}
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
-	if id := RequestID(ctx); id != "" {
-		r.AddAttrs(slog.String("request_id", id))
+	id := RequestID(ctx)
+	if id == "" {
+		return h.cur.Handle(ctx, r)
 	}
-	return h.Handler.Handle(ctx, r)
+	next := h.root.WithAttrs([]slog.Attr{slog.String("request_id", id)})
+	for _, op := range h.ops {
+		next = op(next)
+	}
+	return next.Handle(ctx, r)
 }
 
 func (h contextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return contextHandler{h.Handler.WithAttrs(attrs)}
+	return h.with(func(next slog.Handler) slog.Handler { return next.WithAttrs(attrs) })
 }
 
 func (h contextHandler) WithGroup(name string) slog.Handler {
-	return contextHandler{h.Handler.WithGroup(name)}
+	return h.with(func(next slog.Handler) slog.Handler { return next.WithGroup(name) })
+}
+
+func (h contextHandler) with(op func(slog.Handler) slog.Handler) contextHandler {
+	return contextHandler{
+		root: h.root,
+		cur:  op(h.cur),
+		ops:  append(h.ops[:len(h.ops):len(h.ops)], op),
+	}
 }
