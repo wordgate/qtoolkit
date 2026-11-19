@@ -26,7 +26,7 @@ logger := slogger.Get()
 slog.SetDefault(logger) // optional
 
 r := gin.New()
-r.Use(gin.Recovery(), slogger.Middleware())
+r.Use(slogger.Middleware(), gin.Recovery()) // slogger first: panics are logged as 500s
 
 r.GET("/users/:id", func(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -38,6 +38,15 @@ r.GET("/users/:id", func(c *gin.Context) {
 
 Every record logged through the logger with a context from the middleware
 (`InfoContext`, `LogAttrs`, ...) carries `request_id`.
+
+- Pass `c.Request.Context()`, not the `*gin.Context`: gin only reads values
+  from the request context when `engine.ContextWithFallback = true`.
+- Register `slogger.Middleware()` before `gin.Recovery()`. Otherwise a panic
+  skips the request line.
+- In debug mode, `gin.Recovery()` writes the raw request and its headers
+  (cookies included) to stderr on panic. Run gin in release mode
+  (`gin.SetMode(gin.ReleaseMode)`) or use `gin.CustomRecovery` to keep that
+  data out of logs.
 
 ## Request log
 

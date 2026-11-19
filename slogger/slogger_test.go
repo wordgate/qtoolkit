@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -150,6 +151,19 @@ func TestMiddleware(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/nope/bob", nil))
 	if l := lines(t, buf)[0]; l["level"] != "WARN" || l["route"] != "" || strings.Contains(buf.String(), "bob") {
 		t.Fatalf("unexpected 404 line: %v", l)
+	}
+}
+
+func TestPanicLoggedWithRecoveryAfter(t *testing.T) {
+	buf := useBuffer(t, slog.LevelInfo)
+	r := gin.New()
+	r.Use(Middleware(), gin.RecoveryWithWriter(io.Discard))
+	r.GET("/boom", func(c *gin.Context) { panic("boom") })
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	got := lines(t, buf)
+	if w.Code != 500 || len(got) != 1 || got[0]["level"] != "ERROR" || got[0]["status"] != float64(500) {
+		t.Fatalf("want one ERROR request line, got %d %v", w.Code, got)
 	}
 }
 

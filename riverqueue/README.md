@@ -20,6 +20,12 @@ See [`riverqueue_config.yml`](riverqueue_config.yml).
 | `river.queues` | `{default: 100}` | the client has `Workers` and the code sets no `Queues` |
 | `river.soft_stop_timeout` | `30s` | the code sets no `SoftStopTimeout` |
 
+Size the pool for the workers: jobs that use the database wait for a pool
+connection, and pgxpool's default is only max(4, NumCPU) connections shared
+with HTTP traffic. Set `postgres.max_conns` to cover HTTP concurrency plus the
+workers that hit the database. River's LISTEN/NOTIFY listener takes one more
+connection, hijacked out of the pool, so the server sees `max_conns + 1`.
+
 Everything else (Workers, Logger, PeriodicJobs, ErrorHandler, ...) is set in
 code on the `river.Config` you pass; it is used as given.
 
