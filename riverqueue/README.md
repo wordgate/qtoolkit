@@ -20,6 +20,10 @@ See [`riverqueue_config.yml`](riverqueue_config.yml).
 | `river.queues` | `{default: 100}` | the client has `Workers` and the code sets no `Queues` |
 | `river.soft_stop_timeout` | `30s` | the code sets no `SoftStopTimeout` |
 
+viper lower-cases map keys, so queue names under `river.queues` must be
+lower-case (`Webhooks:` becomes the queue `webhooks`). Use lower-case queue
+names in code too, or set `Queues` in code.
+
 Size the pool for the workers: jobs that use the database wait for a pool
 connection, and pgxpool's default is only max(4, NumCPU) connections shared
 with HTTP traffic. Set `pg.max_conns` to cover HTTP concurrency plus the
@@ -59,6 +63,36 @@ err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 ```
 
 Pass `nil` as the config for an insert-only client (no queues are worked).
+
+### Starting while the database is down
+
+`riverqueue.New` never touches the database, but river's `client.Start` pings
+it first and returns an error when it is unreachable. If the process exits on
+that error, an outage at boot becomes a restart loop. Retry `Start` on the same
+client in the background instead; a failed `Start` leaves the client
+startable (covered by `TestStartRetriesUntilDatabaseIsBack`):
+
+```go
+go func() {
+	for {
+		err := client.Start(ctx)
+		if err == nil {
+			return
+		}
+		logger.WarnContext(ctx, "river start failed; retrying", "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
+}()
+```
+
+Inserts (`Insert`, `InsertTx`) do not need a started client; they fail with
+the connection error while the database is down. Once started, a client rides
+out later outages by itself and works new jobs when the database is back
+(`TestClientRecoversFromOutage`).
 
 ### Graceful stop
 
@@ -104,4 +138,5 @@ res, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil)
 ## Tests
 
 Integration tests need a real PostgreSQL (`PG_TEST_DSN`, see [`pg`](../pg/README.md#tests))
-and are skipped without one. They run River's migrations in that database.
+and are skipped without one. They run River's migrations in that database. On
+k2ci the `pg-integration` suite in `.labtest.yml` provides one.

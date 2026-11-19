@@ -2,7 +2,10 @@ package riverqueue
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -199,5 +202,136 @@ func TestWorkJobInsertedInTx(t *testing.T) {
 
 	if err := client.Stop(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// outagePool returns a pool on PG_TEST_DSN whose new connections fail while
+// *down is true, simulating a database outage without stopping the server.
+func outagePool(t *testing.T, down *atomic.Bool) *pgxpool.Pool {
+	t.Helper()
+	testPool(t) // skip without PG_TEST_DSN; apply migrations
+	pc, err := pgxpool.ParseConfig(os.Getenv("PG_TEST_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d net.Dialer
+	pc.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if down.Load() {
+			return nil, errors.New("simulated outage")
+		}
+		return d.DialContext(ctx, network, addr)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), pc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// River's Start pings the database and fails while it is unreachable. The
+// documented pattern (README "Starting while the database is down") retries
+// Start on the same client until it succeeds; this proves that works.
+func TestStartRetriesUntilDatabaseIsBack(t *testing.T) {
+	resetViper(t)
+	var down atomic.Bool
+	down.Store(true)
+	pool := outagePool(t, &down)
+
+	worker := &pingWorker{done: make(chan int, 1)}
+	workers := river.NewWorkers()
+	river.AddWorker(workers, worker)
+
+	// New must not touch the database.
+	client, err := New(pool, &river.Config{Workers: workers, FetchPollInterval: 200 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("New with database down: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := client.Start(ctx); err == nil {
+		t.Fatal("want Start to fail while the database is down")
+	}
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		down.Store(false)
+	}()
+	for {
+		if err := client.Start(ctx); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("Start never succeeded after the database came back")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	if _, err := client.Insert(ctx, pingArgs{N: 7}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-worker.done:
+		if n != 7 {
+			t.Fatalf("worked job %d, want 7", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("job was not worked after a retried Start")
+	}
+	if err := client.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A started client survives an outage: after its pool connections are dropped
+// and the database is unreachable for a while, it works new jobs once the
+// database is back, without a restart.
+func TestClientRecoversFromOutage(t *testing.T) {
+	resetViper(t)
+	var down atomic.Bool
+	pool := outagePool(t, &down)
+
+	worker := &pingWorker{done: make(chan int, 2)}
+	workers := river.NewWorkers()
+	river.AddWorker(workers, worker)
+	client, err := New(pool, &river.Config{Workers: workers, FetchPollInterval: 200 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Stop(context.Background())
+
+	down.Store(true)
+	pool.Reset() // drop idle connections, as a server restart would
+	if _, err := client.Insert(ctx, pingArgs{N: 1}, nil); err == nil {
+		t.Fatal("want insert to fail during the outage")
+	}
+	time.Sleep(time.Second)
+	down.Store(false)
+
+	// Inserts may fail briefly while connections are re-established.
+	for {
+		if _, err := client.Insert(ctx, pingArgs{N: 2}, nil); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("insert never succeeded after the outage")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	select {
+	case n := <-worker.done:
+		if n != 2 {
+			t.Fatalf("worked job %d, want 2", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("job inserted after the outage was not worked")
 	}
 }

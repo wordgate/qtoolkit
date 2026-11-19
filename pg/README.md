@@ -45,7 +45,10 @@ and never waits for the server: pgxpool opens connections on first use. So an
 unreachable PostgreSQL does not fail or block startup; queries return the
 connection error until it is back, and `pool.Ping(ctx)` serves as a readiness
 check. `Get` fails only on invalid config (missing or malformed DSN,
-`min_conns > max_conns`), and returns that error on every call.
+`min_conns > max_conns`), and returns that error on every call: the pool is
+created once per process. Call `Get` only after `viper.ReadInConfig()`; a call
+made before config is loaded fails with `pg.dsn is required` for the life of
+the process.
 
 There is deliberately no transaction helper in this module: `pgx.BeginFunc`
 and `pgx.BeginTxFunc` (for isolation levels) already are that helper.
