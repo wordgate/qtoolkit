@@ -11,3 +11,30 @@ suites:
       [ -z "$fail" ] || { echo "FAILED:$fail"; false; }
     mem: 3G
     timeout: 30m
+  # pg/riverqueue integration tests against a real PostgreSQL. k2ci has no
+  # Docker or root, so this runs the zonky embedded-postgres binaries (cached
+  # in ~/.cache) as the ci user on a private port. Fails if any test skips.
+  pg-integration:
+    run: >-
+      set -e; export GOTOOLCHAIN=go1.26.10 GOWORK=off;
+      V=17.12.0; PGBIN="$HOME/.cache/qtoolkit-pg-$V";
+      if [ ! -x "$PGBIN/bin/pg_ctl" ]; then
+        rm -rf "$PGBIN.tmp"; mkdir -p "$PGBIN.tmp";
+        curl -fsSL -o "$PGBIN.tmp/pg.jar" "https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/$V/embedded-postgres-binaries-linux-amd64-$V.jar";
+        unzip -p "$PGBIN.tmp/pg.jar" postgres-linux-x86_64.txz | tar -xJ -C "$PGBIN.tmp";
+        rm "$PGBIN.tmp/pg.jar"; rm -rf "$PGBIN"; mv "$PGBIN.tmp" "$PGBIN";
+      fi;
+      DATA=$(mktemp -d); PORT=$((20000 + $$ % 20000));
+      "$PGBIN/bin/initdb" -D "$DATA/db" -U postgres -A trust >/dev/null;
+      "$PGBIN/bin/pg_ctl" -D "$DATA/db" -l "$DATA/pg.log" -w
+      -o "-p $PORT -k $DATA -c listen_addresses=127.0.0.1" start;
+      trap '"$PGBIN/bin/pg_ctl" -D "$DATA/db" -m fast stop >/dev/null; rm -rf "$DATA"' EXIT;
+      export PG_TEST_DSN="postgres://postgres@127.0.0.1:$PORT/postgres?sslmode=disable";
+      for m in pg riverqueue; do
+        echo "=== $m";
+        (cd "$m" && go test -race -count=1 -v ./... > "$DATA/$m.log" 2>&1) || { grep -v '^time=' "$DATA/$m.log" | tail -60; false; };
+        grep -E '^(--- |ok|FAIL)' "$DATA/$m.log";
+        if grep -q -- '--- SKIP' "$DATA/$m.log"; then echo "unexpected SKIP in $m"; false; fi;
+      done
+    mem: 1G
+    timeout: 15m
