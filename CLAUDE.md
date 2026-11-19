@@ -116,6 +116,12 @@ qtoolkit/
 │   └── go.mod
 ├── chatwoot/                # Chatwoot integration
 │   └── go.mod
+├── pg/                      # PostgreSQL pool (pgx v5)
+│   └── go.mod
+├── riverqueue/              # River job queue client (on a pgx pool)
+│   └── go.mod
+├── slogger/                 # log/slog logger + gin request-log middleware
+│   └── go.mod
 ├── db/                      # Database module (GORM+MySQL)
 │   ├── go.mod
 │   └── db_config.yml
@@ -460,6 +466,9 @@ Each module provides a `*_config.yml` configuration template in its own director
 | AWS CloudWatch | `aws/cloudwatch/cloudwatch_config.yml` |
 | AWS SSM | `aws/ssm/ssm_config.yml` |
 | Database | `db/db_config.yml` |
+| PostgreSQL (pgx) | `pg/pg_config.yml` |
+| River | `riverqueue/riverqueue_config.yml` |
+| slog | `slogger/slogger_config.yml` |
 | Redis | `redis/redis_config.yml` |
 | Slack | `slack/slack_config.yml` |
 | Aliyun | `aliyun/aliyun_config.yml` |
@@ -537,6 +546,9 @@ func main() {
 | **AWS EC2** | `aws.ec2.*` → `aws.*` | 2 levels | `aws.ec2.region` → `aws.region` |
 | **AWS CloudWatch** | `aws.cloudwatch.*` → `aws.*` | 2 levels | `aws.cloudwatch.region` → `aws.region` |
 | **AWS SSM** | `aws.ssm.*` → `aws.*` | 2 levels | `aws.ssm.region` → `aws.region` |
+| **PostgreSQL (pg)** | `postgres.*` | 1 level | `postgres.dsn`, `postgres.max_conns` |
+| **River (riverqueue)** | `river.*` | 1 level | `river.queues`, `river.soft_stop_timeout` |
+| **slog (slogger)** | `slog.*` | 1 level | `slog.level` |
 | **Redis** | `redis.*` | 1 level | `redis.addr`, `redis.password`, `redis.db` |
 | **Slack** | `slack.*` | 1 level | `slack.webhooks.*`, `slack.bot_token` |
 | **Aliyun** | `aliyun.*` | 1 level | `aliyun.access_key`, `aliyun.region` |
