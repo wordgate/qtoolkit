@@ -7,7 +7,7 @@
 //	viper.SetConfigFile("config.yml")
 //	viper.ReadInConfig()
 //
-//	pool := pg.MustGet() // connects and pings on first call
+//	pool := pg.MustGet() // fails only on bad config; connects lazily
 //	defer pg.Close()
 //
 //	q := store.New(pool) // sqlc: *pgxpool.Pool satisfies DBTX
@@ -28,7 +28,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config holds the pool settings read from viper (postgres.*).
+// Config holds the pool settings read from viper (pg.*).
 //
 // Every pool field is optional. An unset (zero) field keeps the value from the
 // DSN, and if the DSN does not set it either, pgxpool's default applies:
@@ -53,9 +53,6 @@ type Config struct {
 	MaxConnIdleTime time.Duration `yaml:"max_conn_idle_time"`
 }
 
-// pingTimeout bounds the connectivity check done when the pool is created.
-const pingTimeout = 5 * time.Second
-
 var (
 	globalPool *pgxpool.Pool
 	initErr    error
@@ -64,14 +61,14 @@ var (
 
 func loadConfigFromViper() (*Config, error) {
 	cfg := &Config{
-		DSN:             viper.GetString("postgres.dsn"),
-		MaxConns:        viper.GetInt32("postgres.max_conns"),
-		MinConns:        viper.GetInt32("postgres.min_conns"),
-		MaxConnLifetime: viper.GetDuration("postgres.max_conn_lifetime"),
-		MaxConnIdleTime: viper.GetDuration("postgres.max_conn_idle_time"),
+		DSN:             viper.GetString("pg.dsn"),
+		MaxConns:        viper.GetInt32("pg.max_conns"),
+		MinConns:        viper.GetInt32("pg.min_conns"),
+		MaxConnLifetime: viper.GetDuration("pg.max_conn_lifetime"),
+		MaxConnIdleTime: viper.GetDuration("pg.max_conn_idle_time"),
 	}
 	if cfg.DSN == "" {
-		return nil, fmt.Errorf("postgres.dsn is required")
+		return nil, fmt.Errorf("pg.dsn is required")
 	}
 	return cfg, nil
 }
@@ -81,7 +78,7 @@ func poolConfig(cfg *Config) (*pgxpool.Config, error) {
 	pc, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		// pgx redacts the password in parse errors.
-		return nil, fmt.Errorf("invalid postgres.dsn: %w", err)
+		return nil, fmt.Errorf("invalid pg.dsn: %w", err)
 	}
 	if cfg.MaxConns > 0 {
 		pc.MaxConns = cfg.MaxConns
@@ -96,7 +93,7 @@ func poolConfig(cfg *Config) (*pgxpool.Config, error) {
 		pc.MaxConnIdleTime = cfg.MaxConnIdleTime
 	}
 	if pc.MinConns > pc.MaxConns {
-		return nil, fmt.Errorf("postgres.min_conns (%d) exceeds max_conns (%d)", pc.MinConns, pc.MaxConns)
+		return nil, fmt.Errorf("pg.min_conns (%d) exceeds max_conns (%d)", pc.MinConns, pc.MaxConns)
 	}
 	return pc, nil
 }
@@ -112,24 +109,21 @@ func initialize() {
 		initErr = err
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
-	defer cancel()
-	pool, err := pgxpool.NewWithConfig(ctx, pc)
+	// NewWithConfig does not connect: connections are opened on first use, so
+	// an unreachable server never fails or blocks startup. Queries return the
+	// connection error until the server is back.
+	pool, err := pgxpool.NewWithConfig(context.Background(), pc)
 	if err != nil {
 		initErr = fmt.Errorf("create postgres pool: %w", err)
-		return
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		initErr = fmt.Errorf("connect to postgres: %w", err)
 		return
 	}
 	globalPool = pool
 }
 
 // Get returns the shared pool, creating it from viper config on the first call.
-// The first call also pings the server; an initialization error is returned on
-// every call.
+// It never connects or waits for the server, so it fails only on invalid
+// config; that error is returned on every call. Use pool.Ping(ctx) for a
+// readiness check.
 func Get() (*pgxpool.Pool, error) {
 	initOnce.Do(initialize)
 	return globalPool, initErr

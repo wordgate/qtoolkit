@@ -22,7 +22,7 @@ See [`riverqueue_config.yml`](riverqueue_config.yml).
 
 Size the pool for the workers: jobs that use the database wait for a pool
 connection, and pgxpool's default is only max(4, NumCPU) connections shared
-with HTTP traffic. Set `postgres.max_conns` to cover HTTP concurrency plus the
+with HTTP traffic. Set `pg.max_conns` to cover HTTP concurrency plus the
 workers that hit the database. River's LISTEN/NOTIFY listener takes one more
 connection, hijacked out of the pool, so the server sees `max_conns + 1`.
 

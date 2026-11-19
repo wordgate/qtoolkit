@@ -1,6 +1,6 @@
 # River Configuration Template (module: github.com/wordgate/qtoolkit/riverqueue)
 # Add this to your main config.yml file. The database comes from the pool you
-# pass to riverqueue.New (usually pg.MustGet(), configured under postgres.*).
+# pass to riverqueue.New (usually pg.MustGet(), configured under pg.*).
 
 river:
   # Queues worked by this process: queue name -> max concurrent workers.

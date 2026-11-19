@@ -51,8 +51,8 @@ func testDSN(t *testing.T) string {
 
 func TestMissingDSN(t *testing.T) {
 	reset(t)
-	if _, err := Get(); err == nil || !strings.Contains(err.Error(), "postgres.dsn") {
-		t.Fatalf("want postgres.dsn error, got %v", err)
+	if _, err := Get(); err == nil || !strings.Contains(err.Error(), "pg.dsn") {
+		t.Fatalf("want pg.dsn error, got %v", err)
 	}
 }
 
@@ -91,8 +91,8 @@ func TestPoolConfigDefaultsAndOverrides(t *testing.T) {
 
 func TestViperDurations(t *testing.T) {
 	reset(t)
-	viper.Set("postgres.dsn", "postgres://u:p@localhost/db")
-	viper.Set("postgres.max_conn_lifetime", "15m")
+	viper.Set("pg.dsn", "postgres://u:p@localhost/db")
+	viper.Set("pg.max_conn_lifetime", "15m")
 	cfg, err := loadConfigFromViper()
 	if err != nil {
 		t.Fatal(err)
@@ -112,11 +112,27 @@ func TestInvalidDSNDoesNotLeakPassword(t *testing.T) {
 	}
 }
 
-func TestUnreachableServer(t *testing.T) {
+func TestUnreachableServerDoesNotFailStartup(t *testing.T) {
 	reset(t)
-	viper.Set("postgres.dsn", "postgres://u:p@127.0.0.1:1/db?connect_timeout=1")
+	viper.Set("pg.dsn", "postgres://u:p@127.0.0.1:1/db?connect_timeout=1")
+	start := time.Now()
+	pool, err := Get()
+	if err != nil || pool == nil {
+		t.Fatalf("Get must not fail for an unreachable server: %v", err)
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("Get blocked for %v", d)
+	}
+	if err := pool.Ping(context.Background()); err == nil {
+		t.Fatal("want ping error from unreachable server")
+	}
+}
+
+func TestInvalidConfigErrorIsSticky(t *testing.T) {
+	reset(t)
+	viper.Set("pg.dsn", "postgres://u:p@localhost:notaport/db")
 	if _, err := Get(); err == nil {
-		t.Fatal("want connect error")
+		t.Fatal("want config error")
 	}
 	if _, err := Get(); err == nil {
 		t.Fatal("want the init error on every call")
@@ -126,8 +142,8 @@ func TestUnreachableServer(t *testing.T) {
 func TestPoolAndTransaction(t *testing.T) {
 	dsn := testDSN(t)
 	reset(t)
-	viper.Set("postgres.dsn", dsn)
-	viper.Set("postgres.max_conns", 3)
+	viper.Set("pg.dsn", dsn)
+	viper.Set("pg.max_conns", 3)
 
 	pool := MustGet()
 	if pool != MustGet() {

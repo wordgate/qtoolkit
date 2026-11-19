@@ -546,7 +546,7 @@ func main() {
 | **AWS EC2** | `aws.ec2.*` → `aws.*` | 2 levels | `aws.ec2.region` → `aws.region` |
 | **AWS CloudWatch** | `aws.cloudwatch.*` → `aws.*` | 2 levels | `aws.cloudwatch.region` → `aws.region` |
 | **AWS SSM** | `aws.ssm.*` → `aws.*` | 2 levels | `aws.ssm.region` → `aws.region` |
-| **PostgreSQL (pg)** | `postgres.*` | 1 level | `postgres.dsn`, `postgres.max_conns` |
+| **PostgreSQL (pg)** | `pg.*` | 1 level | `pg.dsn`, `pg.max_conns` |
 | **River (riverqueue)** | `river.*` | 1 level | `river.queues`, `river.soft_stop_timeout` |
 | **slog (slogger)** | `slog.*` | 1 level | `slog.level` |
 | **Redis** | `redis.*` | 1 level | `redis.addr`, `redis.password`, `redis.db` |

@@ -1,7 +1,7 @@
 # PostgreSQL Configuration Template (module: github.com/wordgate/qtoolkit/pg)
 # Add this to your main config.yml file
 
-postgres:
+pg:
   # Connection string (required). URL or key=value form, as accepted by pgx.
   dsn: "postgres://user:password@localhost:5432/dbname?sslmode=disable"
 

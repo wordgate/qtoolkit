@@ -11,15 +11,15 @@ go get github.com/wordgate/qtoolkit/pg
 
 ## Configuration
 
-See [`pg_config.yml`](pg_config.yml). Only `postgres.dsn` is required.
+See [`pg_config.yml`](pg_config.yml). Only `pg.dsn` is required.
 
 | Key | Default | |
 |---|---|---|
-| `postgres.dsn` | — | required |
-| `postgres.max_conns` | DSN `pool_max_conns`, else max(4, NumCPU) | |
-| `postgres.min_conns` | DSN, else 0 | |
-| `postgres.max_conn_lifetime` | DSN, else `1h` | duration |
-| `postgres.max_conn_idle_time` | DSN, else `30m` | duration |
+| `pg.dsn` | — | required |
+| `pg.max_conns` | DSN `pool_max_conns`, else max(4, NumCPU) | |
+| `pg.min_conns` | DSN, else 0 | |
+| `pg.max_conn_lifetime` | DSN, else `1h` | duration |
+| `pg.max_conn_idle_time` | DSN, else `30m` | duration |
 
 ## Usage
 
@@ -27,7 +27,7 @@ See [`pg_config.yml`](pg_config.yml). Only `postgres.dsn` is required.
 viper.SetConfigFile("config.yml")
 viper.ReadInConfig()
 
-pool := pg.MustGet() // first call creates the pool and pings the server
+pool := pg.MustGet() // fails only on invalid config; never connects here
 defer pg.Close()     // after the HTTP server and river client have stopped
 
 // sqlc: both *pgxpool.Pool and pgx.Tx satisfy the generated DBTX.
@@ -40,8 +40,12 @@ err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 })
 ```
 
-`pg.Get()` returns `(*pgxpool.Pool, error)`; the first error (bad config,
-unreachable server) is returned on every later call.
+`pg.Get()` returns `(*pgxpool.Pool, error)`. Creating the pool never connects
+and never waits for the server: pgxpool opens connections on first use. So an
+unreachable PostgreSQL does not fail or block startup; queries return the
+connection error until it is back, and `pool.Ping(ctx)` serves as a readiness
+check. `Get` fails only on invalid config (missing or malformed DSN,
+`min_conns > max_conns`), and returns that error on every call.
 
 There is deliberately no transaction helper in this module: `pgx.BeginFunc`
 and `pgx.BeginTxFunc` (for isolation levels) already are that helper.
