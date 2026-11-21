@@ -33,6 +33,13 @@ const (
 	WebhookOrderExpired WebhookEventType = "order.expired"
 	WebhookOrderFailed  WebhookEventType = "order.failed"
 
+	// Refunds to the original payment method (apps with refunds to source only).
+	WebhookOrderRefunded     WebhookEventType = "order.refunded"
+	WebhookOrderRefundFailed WebhookEventType = "order.refund_failed"
+	// Card disputes. NextPay only forwards them.
+	WebhookOrderDisputeOpened WebhookEventType = "order.dispute.opened"
+	WebhookOrderDisputeClosed WebhookEventType = "order.dispute.closed"
+
 	// Subscription events carry WebhookSubscriptionData.
 	WebhookSubscriptionCreated   WebhookEventType = "subscription.created"
 	WebhookSubscriptionRenewed   WebhookEventType = "subscription.renewed"
@@ -41,6 +48,10 @@ const (
 	WebhookSubscriptionPastDue   WebhookEventType = "subscription.past_due"
 	WebhookSubscriptionPaused    WebhookEventType = "subscription.paused"
 	WebhookSubscriptionResumed   WebhookEventType = "subscription.resumed"
+	// An automatic collection attempt failed; see WebhookSubscriptionData.Reason.
+	WebhookSubscriptionPaymentFailed WebhookEventType = "subscription.payment_failed"
+	// The saved card was replaced; see WebhookSubscriptionData.PaymentMethod.
+	WebhookSubscriptionPaymentMethodUpdated WebhookEventType = "subscription.payment_method_updated"
 
 	// Contract events carry WebhookContractData.
 	WebhookContractActivated WebhookEventType = "contract.activated"
@@ -78,6 +89,14 @@ type WebhookOrderData struct {
 	Plan           *Plan  `json:"plan,omitempty"` // present for subscription orders
 	PaidAt         int64  `json:"paidAt,omitempty"`
 	Metadata       string `json:"metadata,omitempty"`
+	ExpiredAt      int64  `json:"expiredAt,omitempty"`
+	// Renewal orders only: the subscription and the period this order pays for.
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	PeriodStart    int64  `json:"periodStart,omitempty"`
+	PeriodEnd      int64  `json:"periodEnd,omitempty"`
+	// Paid orders only: the wallet part and the part captured through Stripe.
+	WalletAmount *uint64 `json:"walletAmount,omitempty"`
+	CardAmount   *uint64 `json:"cardAmount,omitempty"`
 }
 
 // WebhookSubscriptionData is the data for subscription.* events.
@@ -90,6 +109,72 @@ type WebhookSubscriptionData struct {
 	CurrentPeriodStart int64  `json:"currentPeriodStart"`
 	CurrentPeriodEnd   int64  `json:"currentPeriodEnd"`
 	AutoRenew          bool   `json:"autoRenew"` // = !cancelAtPeriodEnd
+	// Metadata is the opaque string given at subscription creation.
+	Metadata string `json:"metadata,omitempty"`
+	// GraceEndsAt: when the subscription expires if still unpaid. Present while past_due, and on
+	// payment_failed once the period has ended and the app grants a grace period.
+	GraceEndsAt int64 `json:"graceEndsAt,omitempty"`
+
+	// Payment of the period [CurrentPeriodStart, CurrentPeriodEnd): subscription.created and
+	// subscription.renewed. OrderID is "" on events that carry no payment.
+	OrderID      string `json:"orderId,omitempty"`
+	Amount       uint64 `json:"amount,omitempty"`
+	Currency     string `json:"currency,omitempty"`
+	WalletAmount uint64 `json:"walletAmount,omitempty"`
+	CardAmount   uint64 `json:"cardAmount,omitempty"`
+
+	// subscription.payment_failed: why, the 1-based count of real attempts for this period, and
+	// when the next automatic attempt is due (0 = none).
+	Reason      string `json:"reason,omitempty"`
+	Attempt     int    `json:"attempt,omitempty"`
+	NextRetryAt int64  `json:"nextRetryAt,omitempty"`
+
+	// subscription.payment_method_updated: the new card.
+	PaymentMethod *WebhookCard `json:"paymentMethod,omitempty"`
+}
+
+// WebhookCard is the saved card in subscription.payment_method_updated.
+type WebhookCard struct {
+	Brand    string `json:"brand"`
+	Last4    string `json:"last4"`
+	ExpMonth int64  `json:"expMonth,omitempty"`
+	ExpYear  int64  `json:"expYear,omitempty"`
+}
+
+// WebhookRefundData is the payload of order.refunded and order.refund_failed.
+type WebhookRefundData struct {
+	OrderID        string `json:"orderId"`
+	UserID         string `json:"userId"`
+	ObjectID       string `json:"objectId"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	Metadata       string `json:"metadata,omitempty"`
+	RefundID       string `json:"refundId"`
+	Amount         uint64 `json:"amount"`        // this refund
+	RefundedTotal  uint64 `json:"refundedTotal"` // all succeeded refunds of the order
+	OrderAmount    uint64 `json:"orderAmount"`
+	Currency       string `json:"currency"`
+	OrderStatus    string `json:"orderStatus"`
+	Initiator      string `json:"initiator"` // tenant | system
+	Reason         string `json:"reason"`    // requested | late_payment | duplicate_payment | ...
+	Note           string `json:"note,omitempty"`
+	IdempotencyKey string `json:"idempotencyKey,omitempty"` // the tenant's key; absent on system refunds
+	FailureReason  string `json:"failureReason,omitempty"`
+}
+
+// WebhookDisputeData is the payload of order.dispute.opened and order.dispute.closed.
+type WebhookDisputeData struct {
+	OrderID        string `json:"orderId"`
+	UserID         string `json:"userId"`
+	ObjectID       string `json:"objectId"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	Metadata       string `json:"metadata,omitempty"`
+	DisputeID      string `json:"disputeId"`
+	Amount         uint64 `json:"amount"`
+	Currency       string `json:"currency"`
+	Reason         string `json:"reason"`
+	Status         string `json:"status"`            // open | closed
+	Outcome        string `json:"outcome,omitempty"` // won | lost, once closed
+	EvidenceDueBy  int64  `json:"evidenceDueBy,omitempty"`
 }
 
 // WebhookContractData is the data for contract.* events.
@@ -176,7 +261,18 @@ func (e *WebhookEvent) SubscriptionData() (*WebhookSubscriptionData, error) {
 	return decodeWebhookData[WebhookSubscriptionData](e,
 		WebhookSubscriptionCreated, WebhookSubscriptionRenewed, WebhookSubscriptionCancelled,
 		WebhookSubscriptionExpired, WebhookSubscriptionPastDue,
-		WebhookSubscriptionPaused, WebhookSubscriptionResumed)
+		WebhookSubscriptionPaused, WebhookSubscriptionResumed,
+		WebhookSubscriptionPaymentFailed, WebhookSubscriptionPaymentMethodUpdated)
+}
+
+// RefundData decodes the payload of order.refunded / order.refund_failed.
+func (e *WebhookEvent) RefundData() (*WebhookRefundData, error) {
+	return decodeWebhookData[WebhookRefundData](e, WebhookOrderRefunded, WebhookOrderRefundFailed)
+}
+
+// DisputeData decodes the payload of order.dispute.opened / order.dispute.closed.
+func (e *WebhookEvent) DisputeData() (*WebhookDisputeData, error) {
+	return decodeWebhookData[WebhookDisputeData](e, WebhookOrderDisputeOpened, WebhookOrderDisputeClosed)
 }
 
 // ContractData decodes the payload of a contract.* event.

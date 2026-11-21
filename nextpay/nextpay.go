@@ -298,6 +298,10 @@ type OrderRequest struct {
 	SuccessURL         string `json:"successUrl,omitempty"`
 	CancelURL          string `json:"cancelUrl,omitempty"`
 	Metadata           string `json:"metadata,omitempty"`
+	// Locale of the hosted pages; see SubscriptionRequest.Locale.
+	Locale string `json:"locale,omitempty"`
+	// ExpiresInSeconds: how long the order stays payable (300-86400). 0 = the app's default.
+	ExpiresInSeconds int `json:"expiresInSeconds,omitempty"`
 }
 
 // OrderResult is the result of CreateOrder.
@@ -336,6 +340,14 @@ type SubscriptionRequest struct {
 	ObjectID            string `json:"objectId,omitempty"`
 	SuccessURL          string `json:"successUrl,omitempty"`
 	CancelURL           string `json:"cancelUrl,omitempty"`
+	// Locale of the hosted pages: en-GB, ar, he, fil, id, ms, th, tr, vi, zh-Hans, zh-Hant.
+	// Empty keeps the default (zh-Hans); an unsupported value falls back to en-GB.
+	Locale string `json:"locale,omitempty"`
+	// ExpiresInSeconds: how long the order stays payable (300-86400). 0 = the app's default.
+	ExpiresInSeconds int `json:"expiresInSeconds,omitempty"`
+	// Metadata: opaque string (at most 2000 characters) echoed in every subscription.* event and
+	// in the orders of the subscription.
+	Metadata string `json:"metadata,omitempty"`
 }
 
 // SubscriptionResult is the result of CreateSubscription.
@@ -746,6 +758,10 @@ func GetWalletTransactions(ctx context.Context, userID string) ([]WalletTransact
 // initialization + error path.
 func do[T any](ctx context.Context, fn func(context.Context, *Client) (T, error)) (T, error) {
 	var zero T
+	// A client carried by the context (WithClient) wins over the process-wide one.
+	if client, ok := ctx.Value(clientCtxKey{}).(*Client); ok && client != nil {
+		return fn(ctx, client)
+	}
 	client, err := Get()
 	if err != nil {
 		return zero, err
