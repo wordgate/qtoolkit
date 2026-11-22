@@ -544,6 +544,24 @@ func TestRenewSubscription_Success(t *testing.T) {
 	}
 }
 
+func TestRenewSubscriptionWith_SendsReturnURLs(t *testing.T) {
+	resetState()
+	defer mock(t, func(t *testing.T, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("body: %v", err)
+		}
+		if body["successUrl"] != "https://app.example/th/account" || body["cancelUrl"] != "" {
+			t.Errorf("unexpected body: %v", body)
+		}
+	}, testResponse{Data: map[string]any{"orderId": "ord_r", "paymentUrl": "https://pay/ord_r"}})()
+
+	res, err := RenewSubscriptionWith(t.Context(), "sub_1", &RenewOptions{SuccessURL: "https://app.example/th/account"})
+	if err != nil || res.OrderID != "ord_r" {
+		t.Fatalf("unexpected: %+v %v", res, err)
+	}
+}
+
 // --- Billing ---
 
 func TestCreatePendingCharge_Success(t *testing.T) {

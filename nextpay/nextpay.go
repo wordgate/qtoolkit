@@ -408,6 +408,14 @@ type UpdatePlanRequest struct {
 	IsActive     *bool   `json:"isActive,omitempty"`
 }
 
+// RenewOptions are the optional per-call settings of a manual renewal.
+type RenewOptions struct {
+	// SuccessURL / CancelURL: where the payer returns after paying or abandoning
+	// this renewal (http/https). Empty = the app's default.
+	SuccessURL string `json:"successUrl,omitempty"`
+	CancelURL  string `json:"cancelUrl,omitempty"`
+}
+
 // RenewResult is the result of RenewSubscription (a renewal order + payment URL).
 type RenewResult struct {
 	OrderID    string `json:"orderId"`
@@ -673,9 +681,18 @@ func ResumeSubscription(ctx context.Context, subscriptionUUID string) (*Subscrip
 }
 
 // RenewSubscription creates a manual renewal order and returns its payment URL.
+// The payer returns to the app's default success / cancel URLs; use
+// RenewSubscriptionWith to choose them per call.
 func RenewSubscription(ctx context.Context, subscriptionUUID string) (*RenewResult, error) {
+	return RenewSubscriptionWith(ctx, subscriptionUUID, nil)
+}
+
+// RenewSubscriptionWith is RenewSubscription with per-call options. A repeated
+// call for the same unpaid period returns the same order and applies the URLs
+// given in that call. opts may be nil.
+func RenewSubscriptionWith(ctx context.Context, subscriptionUUID string, opts *RenewOptions) (*RenewResult, error) {
 	return do(ctx, func(ctx context.Context, c *Client) (*RenewResult, error) {
-		return c.renewSubscription(ctx, subscriptionUUID)
+		return c.renewSubscription(ctx, subscriptionUUID, opts)
 	})
 }
 
@@ -977,8 +994,12 @@ func (c *Client) resumeSubscription(ctx context.Context, subscriptionUUID string
 	return decodeData[Subscription](resp.Data)
 }
 
-func (c *Client) renewSubscription(ctx context.Context, subscriptionUUID string) (*RenewResult, error) {
-	resp, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/renew", nil)
+func (c *Client) renewSubscription(ctx context.Context, subscriptionUUID string, opts *RenewOptions) (*RenewResult, error) {
+	var body any // no body at all when there are no options, as before
+	if opts != nil && (opts.SuccessURL != "" || opts.CancelURL != "") {
+		body = opts
+	}
+	resp, err := c.doRequest(ctx, "POST", "/api/subscriptions/"+url.PathEscape(subscriptionUUID)+"/renew", body)
 	if err != nil {
 		return nil, err
 	}
