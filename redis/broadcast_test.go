@@ -644,3 +644,62 @@ func TestBroadcast_ConcurrentDeliverAndUnsubscribe(t *testing.T) {
 		t.Errorf("activeChannels = %d after all subscribers left, want 0", n)
 	}
 }
+
+// With WithSubscribedFrame, the first frame on a new WebSocket is the given payload, and it
+// is sent only after the subscription is registered: a Pub made after the client has read
+// that frame always reaches the client. Without the option no such frame is sent.
+func TestBroadcast_SubscribedFrame(t *testing.T) {
+	useMiniredis(t)
+	b := NewNamedBroadcast("hello", 10, WithSubscribedFrame(map[string]any{"type": "subscribed"}))
+	startRun(t, b)
+	wsURL, _ := wsServer(t, b)
+
+	type frame struct {
+		Channel string         `json:"channel"`
+		Payload map[string]any `json:"payload"`
+	}
+	read := func(conn *websocket.Conn) frame {
+		t.Helper()
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("ReadMessage: %v", err)
+		}
+		var f frame
+		if err := json.Unmarshal(data, &f); err != nil {
+			t.Fatalf("unmarshal %q: %v", data, err)
+		}
+		return f
+	}
+
+	for i := 0; i < 20; i++ {
+		conn := dial(t, wsURL("box-1"))
+		first := read(conn)
+		if first.Channel != "box-1" || first.Payload["type"] != "subscribed" {
+			t.Fatalf("first frame = %+v, want the subscribed frame on box-1", first)
+		}
+		if n := b.SubscriberCount("box-1"); n < 1 {
+			t.Fatalf("subscribed frame arrived before registration: SubscriberCount = %d", n)
+		}
+		if err := b.Pub(context.Background(), "box-1", map[string]any{"type": "pull", "i": i}); err != nil {
+			t.Fatalf("Pub: %v", err)
+		}
+		if got := read(conn); got.Payload["type"] != "pull" || got.Payload["i"] != float64(i) {
+			t.Fatalf("after the subscribed frame got %+v, want pull %d", got, i)
+		}
+		conn.Close()
+		eventually(t, 2*time.Second, "subscriber gone", func() bool { return b.SubscriberCount("box-1") == 0 })
+	}
+
+	plain := NewNamedBroadcast("plain", 10)
+	startRun(t, plain)
+	plainURL, _ := wsServer(t, plain)
+	conn := dial(t, plainURL("box-2"))
+	eventually(t, 2*time.Second, "plain subscriber registered", func() bool { return plain.SubscriberCount("box-2") == 1 })
+	if err := plain.Pub(context.Background(), "box-2", map[string]any{"type": "pull"}); err != nil {
+		t.Fatalf("Pub: %v", err)
+	}
+	if got := read(conn); got.Payload["type"] != "pull" {
+		t.Fatalf("without the option the first frame = %+v, want the published one", got)
+	}
+}

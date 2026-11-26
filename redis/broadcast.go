@@ -95,6 +95,17 @@ func WithCheckOrigin(fn func(*http.Request) bool) BroadcastOption {
 	}
 }
 
+// WithSubscribedFrame makes every new WebSocket subscription (WsSubChannel / WsSub) send one
+// frame with this payload as its first frame, right after the subscription is registered. A
+// client that has read this frame knows that every later Pub on its channel reaches it, so it
+// can fetch the current state then without a gap between the fetch and the subscription.
+// The frame goes only to that connection, not through Redis. nil payload: no such frame (default).
+func WithSubscribedFrame(payload interface{}) BroadcastOption {
+	return func(b *Broadcast) {
+		b.subscribedFrame = payload
+	}
+}
+
 // Broadcast 广播服务
 type Broadcast struct {
 	mu       sync.Mutex                     // 保护 channels 的增删，以及各频道订阅者集合的增删
@@ -106,6 +117,7 @@ type Broadcast struct {
 	cachePrefix          string // 迟到消息缓存键前缀
 	subscriberBuffer     int
 	checkOrigin          func(*http.Request) bool
+	subscribedFrame      interface{} // first frame of each WebSocket subscription; nil = none
 	pingInterval         time.Duration
 	pongWait             time.Duration
 	writeWait            time.Duration
@@ -286,6 +298,15 @@ func (b *Broadcast) WsSubChannel(c *gin.Context, channel string) error {
 
 	sub := b.subscribe(channel, onKick)
 	defer b.unsubscribe(channel, sub)
+	if b.subscribedFrame != nil {
+		// The write loop below starts only now, so this frame is written after the
+		// registration. A full buffer (a Pub got in first and the buffer is tiny) already
+		// holds a frame for the client, so it is skipped rather than blocked on.
+		select {
+		case sub.ch <- &BroadcastMessage{Channel: channel, Timestamp: time.Now().UnixMilli(), Payload: b.subscribedFrame}:
+		default:
+		}
+	}
 
 	// 读循环：客户端帧内容一律丢弃，只用于探测对端关闭并处理 pong。
 	// 读超时由 pong（以及任何客户端帧）续期。
